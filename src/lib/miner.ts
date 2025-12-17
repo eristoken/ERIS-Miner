@@ -561,7 +561,7 @@ export class Miner {
     while (this.isMining) {
       if (this.solutionQueue.length === 0) {
         // No solutions to process, wait a bit
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 100));
         continue;
       }
       
@@ -584,78 +584,87 @@ export class Miner {
       
       this.log('info', `Processing solution from queue (${this.solutionQueue.length} remaining)...`);
       
-      // Validate solution before submission - check if challenge is still current
+      // Wrap entire processing in try-finally to ensure indicators are always cleared
+      // even when solutions are skipped
       try {
-        if (!this.contract || !this.provider) {
-          this.log('warn', 'Contract or provider not available, skipping solution');
-          continue;
-        }
-        
-        const chainRpcs = await window.electronAPI.readRpcs();
-        if (!chainRpcs || !chainRpcs[this.settings.selected_chain_id]) {
-          this.log('warn', 'RPCs not available, skipping solution');
-          continue;
-        }
-        
-        let provider = this.provider;
+        // Validate solution before submission - check if challenge is still current
+        let shouldSkip = false;
         try {
-          provider = await this.rpcManager.getProvider(
-            this.settings.selected_chain_id,
-            chainRpcs[this.settings.selected_chain_id]
-          );
-        } catch (error) {
-          await this.rpcManager.switchToNextRpc(
-            this.settings.selected_chain_id,
-            chainRpcs[this.settings.selected_chain_id]
-          );
-          provider = await this.rpcManager.getProvider(
-            this.settings.selected_chain_id,
-            chainRpcs[this.settings.selected_chain_id]
-          );
+          if (!this.contract || !this.provider) {
+            this.log('warn', 'Contract or provider not available, skipping solution');
+            shouldSkip = true;
+          } else {
+            const chainRpcs = await window.electronAPI.readRpcs();
+            if (!chainRpcs || !chainRpcs[this.settings.selected_chain_id]) {
+              this.log('warn', 'RPCs not available, skipping solution');
+              shouldSkip = true;
+            } else {
+              let provider = this.provider;
+              try {
+                provider = await this.rpcManager.getProvider(
+                  this.settings.selected_chain_id,
+                  chainRpcs[this.settings.selected_chain_id]
+                );
+              } catch (error) {
+                await this.rpcManager.switchToNextRpc(
+                  this.settings.selected_chain_id,
+                  chainRpcs[this.settings.selected_chain_id]
+                );
+                provider = await this.rpcManager.getProvider(
+                  this.settings.selected_chain_id,
+                  chainRpcs[this.settings.selected_chain_id]
+                );
+              }
+              
+              const contractAddress = await this.getContractAddress();
+              const contractWithProvider = new ethers.Contract(
+                contractAddress,
+                ERC918_ABI,
+                provider
+              );
+              
+              // Fetch current challenge from contract
+              const currentChallenge = await contractWithProvider.getChallengeNumber();
+              const currentChallengeHex = ethers.hexlify(currentChallenge);
+              
+              // If solution's challenge doesn't match current challenge, skip it
+              if (solution.challenge.toLowerCase() !== currentChallengeHex.toLowerCase()) {
+                this.log('warn', `Solution challenge mismatch (queued: ${solution.challenge.substring(0, 10)}..., current: ${currentChallengeHex.substring(0, 10)}...), skipping stale solution`);
+                shouldSkip = true;
+              }
+            }
+          }
+        } catch (error: any) {
+          this.log('warn', `Failed to validate solution challenge: ${error.message}, skipping solution`);
+          shouldSkip = true;
         }
         
-        const contractAddress = await this.getContractAddress();
-        const contractWithProvider = new ethers.Contract(
-          contractAddress,
-          ERC918_ABI,
-          provider
-        );
-        
-        // Fetch current challenge from contract
-        const currentChallenge = await contractWithProvider.getChallengeNumber();
-        const currentChallengeHex = ethers.hexlify(currentChallenge);
-        
-        // If solution's challenge doesn't match current challenge, skip it
-        if (solution.challenge.toLowerCase() !== currentChallengeHex.toLowerCase()) {
-          this.log('warn', `Solution challenge mismatch (queued: ${solution.challenge.substring(0, 10)}..., current: ${currentChallengeHex.substring(0, 10)}...), skipping stale solution`);
-          continue; // Skip this solution and process next one
-        }
-      } catch (error: any) {
-        this.log('warn', `Failed to validate solution challenge: ${error.message}, skipping solution`);
-        continue; // Skip this solution if validation fails
-      }
-      
-      try {
-        const submitted = await this.submitSolution(BigInt(solution.nonce), solution.challenge);
-        if (submitted) {
-          // Stats are already updated in submitSolution() when mint event is found
-          // But update again here to ensure UI reflects latest state
-          this.updateStats();
-          this.log('success', 'Solution submitted successfully');
-        } else {
-          // Error occurred, miner may have been stopped
-          if (!this.isMining) {
-            break;
+        // If validation failed, skip submission but continue processing queue
+        if (!shouldSkip) {
+          // Submit the solution
+          try {
+            const submitted = await this.submitSolution(BigInt(solution.nonce), solution.challenge);
+            if (submitted) {
+              // Stats are already updated in submitSolution() when mint event is found
+              // But update again here to ensure UI reflects latest state
+              this.updateStats();
+              this.log('success', 'Solution submitted successfully');
+            } else {
+              // Error occurred, miner may have been stopped
+              if (!this.isMining) {
+                break;
+              }
+            }
+          } catch (error: any) {
+            this.log('error', `Failed to submit queued solution: ${error.message}`);
+            // If error stops the miner, exit
+            if (!this.isMining) {
+              break;
+            }
           }
         }
-      } catch (error: any) {
-        this.log('error', `Failed to submit queued solution: ${error.message}`);
-        // If error stops the miner, exit
-        if (!this.isMining) {
-          break;
-        }
       } finally {
-        // Clear submission flags and update pending count
+        // Always clear submission flags and update pending count, even if solution was skipped
         this.isSubmitting = false;
         this.stats.isSubmitting = false;
         this.stats.pendingSolutions = this.solutionQueue.length;
@@ -664,6 +673,9 @@ export class Miner {
         // Otherwise keep it true to show there are still solutions pending
         if (this.solutionQueue.length === 0) {
           this.stats.solutionFound = false;
+        } else {
+          // Keep solutionFound true if there are more solutions waiting
+          this.stats.solutionFound = true;
         }
         
         if (this.onStatsUpdate) {
@@ -676,9 +688,9 @@ export class Miner {
         await new Promise((resolve) => setTimeout(resolve, this.settings.rpc_rate_limit_ms));
       }
       
-      // Small delay even if rate limiting is disabled
+      // Small delay even if rate limiting is disabled, but shorter to process queue faster
       if (this.isMining) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
     

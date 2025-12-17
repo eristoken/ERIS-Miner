@@ -8,6 +8,7 @@ import {
   Grid,
   Paper,
   CircularProgress,
+  Snackbar,
   Alert,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -16,6 +17,8 @@ import { Miner } from '../lib/miner';
 import { RpcManager } from '../lib/rpcManager';
 import { Settings, MiningStats, Chain } from '../types';
 import { addLog } from './Console';
+// @ts-ignore - Image import
+import erisBanner from '../../eris_app_banner.png';
 
 // Shared miner and RPC manager instances so mining state persists
 // across route/tab changes.
@@ -41,11 +44,48 @@ export default function Home() {
   });
   const [miner, setMiner] = useState<Miner | null>(sharedMiner);
   const [loading, setLoading] = useState(true);
+  
+  // Toast state
+  const [toast, setToast] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error' | 'info' | 'warning';
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
+  
+  // Track previous stats to detect changes for toasts
+  const [prevStats, setPrevStats] = useState<MiningStats>(stats);
 
   useEffect(() => {
     loadSettings();
   }, []);
 
+  // Handle toast notifications for stats changes
+  useEffect(() => {
+    // Submitting toast
+    if (stats.isSubmitting && !prevStats.isSubmitting) {
+      setToast({
+        open: true,
+        message: '⏳ Submitting solution to blockchain...',
+        severity: 'info',
+      });
+    }
+    
+    // Error toast
+    if (stats.errorMessage && stats.errorMessage !== prevStats.errorMessage) {
+      setToast({
+        open: true,
+        message: `⚠️ ${stats.errorMessage}`,
+        severity: 'error',
+      });
+    }
+    
+    setPrevStats(stats);
+  }, [stats, prevStats]);
+  
   useEffect(() => {
     if (settings) {
       initializeMiner();
@@ -168,109 +208,180 @@ export default function Home() {
 
   return (
       <Box>
+        {/* Toast Notifications */}
+        <Snackbar
+          open={toast.open}
+          autoHideDuration={stats.errorMessage ? 6000 : 3000}
+          onClose={() => setToast({ ...toast, open: false })}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={() => setToast({ ...toast, open: false })}
+            severity={toast.severity}
+            sx={{ width: '100%' }}
+          >
+            {toast.message}
+          </Alert>
+        </Snackbar>
+        
         <Grid container spacing={3}>
         <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Box>
-                  <Typography variant="h5">Mining Control</Typography>
-                  {settings && chains[settings.selected_chain_id] && (
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      Chain: {chains[settings.selected_chain_id].name} (Chain ID: {settings.selected_chain_id})
-                    </Typography>
-                  )}
-                </Box>
-                <Button
-                  variant="contained"
-                  color={stats.isMining ? 'error' : 'primary'}
-                  startIcon={stats.isMining ? <StopIcon /> : <PlayArrowIcon />}
-                  onClick={handleStartStop}
-                  size="large"
-                >
-                  {stats.isMining ? 'Stop Mining' : 'Start Mining'}
-                </Button>
-              </Box>
-              {stats.errorMessage && (
-                <Alert severity="error" sx={{ mb: 2 }} onClose={() => {
-                  setStats((prev: MiningStats) => ({ ...prev, errorMessage: null }));
-                  if (miner) {
-                    const currentStats = miner.getStats();
-                    currentStats.errorMessage = null;
-                    miner.setOnStatsUpdate((updatedStats) => {
-                      setStats({ ...updatedStats, errorMessage: null });
-                    });
-                  }
-                }}>
-                  ⚠️ {stats.errorMessage}
-                </Alert>
-              )}
-              {stats.solutionFound && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  ✓ Solution Found! Processing...
-                </Alert>
-              )}
-              {stats.isSubmitting && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  ⏳ Submitting solution to blockchain...
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
+          {/* Banner Image Container with Cards */}
+          <Box
+            sx={{
+              position: 'relative',
+              width: '100%',
+              borderRadius: 2,
+              overflow: 'hidden',
+              boxShadow: 3,
+              mb: 3,
+            }}
+          >
+            <Box
+              component="img"
+              src={erisBanner}
+              alt="ERIS Token Banner"
+              sx={{
+                width: '100%',
+                height: 'auto',
+                display: 'block',
+              }}
+            />
+            {/* Overlay */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                pointerEvents: 'none',
+              }}
+            />
+            
+            {/* Mining Control Card - Top of Image */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 2,
+                p: 2,
+              }}
+            >
+              <Card
+                sx={{
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  backdropFilter: 'blur(1px)',
+                }}
+              >
+                <CardContent>
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                    <Box>
+                      <Typography variant="h5">Mining Control</Typography>
+                      {settings && chains[settings.selected_chain_id] && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                          Chain: {chains[settings.selected_chain_id].name} (Chain ID: {settings.selected_chain_id})
+                        </Typography>
+                      )}
+                    </Box>
+                    <Button
+                      variant="contained"
+                      color={stats.isMining ? 'error' : 'primary'}
+                      startIcon={stats.isMining ? <StopIcon /> : <PlayArrowIcon />}
+                      onClick={handleStartStop}
+                      size="large"
+                    >
+                      {stats.isMining ? 'Stop Mining' : 'Start Mining'}
+                    </Button>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Box>
+            
+            {/* Mining Statistics Card - Bottom of Image */}
+            <Box
+              sx={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 2,
+                p: 2,
+              }}
+            >
+              <Card
+                sx={{
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  backdropFilter: 'blur(1px)',
+                }}
+              >
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Mining Statistics
+                  </Typography>
+                  <Grid container spacing={3} sx={{ mt: 1 }}>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Hash Rate
+                        </Typography>
+                        <Typography variant="h5">
+                          {(stats.hashesPerSecond / 1000).toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          kH/s
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Total Hashes
+                        </Typography>
+                        <Typography variant="h5">
+                          {stats.totalHashes.toLocaleString()}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Solutions Found
+                        </Typography>
+                        <Typography variant="h5">{stats.solutionsFound}</Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Tokens Minted
+                        </Typography>
+                        <Typography variant="h5">
+                          {stats.tokensMinted.toFixed(6)}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Pending Solutions
+                        </Typography>
+                        <Typography variant="h5" color={stats.pendingSolutions > 0 ? 'primary' : 'text.primary'}>
+                          {stats.pendingSolutions}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
+                </CardContent>
+              </Card>
+            </Box>
+          </Box>
         </Grid>
 
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Mining Statistics
-              </Typography>
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Hash Rate
-                </Typography>
-                <Typography variant="h4">
-                  {(stats.hashesPerSecond / 1000).toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}{' '}
-                  kH/s
-                </Typography>
-              </Box>
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Total Hashes
-                </Typography>
-                <Typography variant="h5">
-                  {stats.totalHashes.toLocaleString()}
-                </Typography>
-              </Box>
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Solutions Found
-                </Typography>
-                <Typography variant="h5">{stats.solutionsFound}</Typography>
-              </Box>
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Tokens Minted
-                </Typography>
-                <Typography variant="h5">
-                  {stats.tokensMinted.toFixed(6)}
-                </Typography>
-              </Box>
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Pending Solutions
-                </Typography>
-                <Typography variant="h5" color={stats.pendingSolutions > 0 ? 'primary' : 'text.primary'}>
-                  {stats.pendingSolutions}
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
