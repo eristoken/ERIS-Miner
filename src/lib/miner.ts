@@ -342,6 +342,9 @@ export class Miner {
           const rewardAmount = parsed.args.reward_amount;
           this.tokensMinted += Number(ethers.formatEther(rewardAmount));
           this.solutionsFound++;
+          
+          // Update stats immediately after incrementing counters
+          this.updateStats();
         }
       }
 
@@ -635,6 +638,8 @@ export class Miner {
       try {
         const submitted = await this.submitSolution(BigInt(solution.nonce), solution.challenge);
         if (submitted) {
+          // Stats are already updated in submitSolution() when mint event is found
+          // But update again here to ensure UI reflects latest state
           this.updateStats();
           this.log('success', 'Solution submitted successfully');
         } else {
