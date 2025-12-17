@@ -47,6 +47,8 @@ export interface MiningStats {
   isMining: boolean;
   solutionFound: boolean;
   isSubmitting: boolean;
+  pendingSolutions: number;
+  errorMessage: string | null;
 }
 
 export interface LogEntry {

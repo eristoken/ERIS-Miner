@@ -30,12 +30,14 @@ export default function Home() {
     totalHashes: 0,
     solutionsFound: 0,
     tokensMinted: 0,
+    pendingSolutions: 0,
     currentChallenge: '0x',
     currentDifficulty: '0',
     currentReward: '0',
     isMining: false,
     solutionFound: false,
     isSubmitting: false,
+    errorMessage: null,
   });
   const [miner, setMiner] = useState<Miner | null>(sharedMiner);
   const [loading, setLoading] = useState(true);
@@ -189,6 +191,20 @@ export default function Home() {
                   {stats.isMining ? 'Stop Mining' : 'Start Mining'}
                 </Button>
               </Box>
+              {stats.errorMessage && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => {
+                  setStats((prev: MiningStats) => ({ ...prev, errorMessage: null }));
+                  if (miner) {
+                    const currentStats = miner.getStats();
+                    currentStats.errorMessage = null;
+                    miner.setOnStatsUpdate((updatedStats) => {
+                      setStats({ ...updatedStats, errorMessage: null });
+                    });
+                  }
+                }}>
+                  ⚠️ {stats.errorMessage}
+                </Alert>
+              )}
               {stats.solutionFound && (
                 <Alert severity="success" sx={{ mb: 2 }}>
                   ✓ Solution Found! Processing...
@@ -240,6 +256,14 @@ export default function Home() {
                 </Typography>
                 <Typography variant="h5">
                   {stats.tokensMinted.toFixed(6)}
+                </Typography>
+              </Box>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Pending Solutions
+                </Typography>
+                <Typography variant="h5" color={stats.pendingSolutions > 0 ? 'primary' : 'text.primary'}>
+                  {stats.pendingSolutions}
                 </Typography>
               </Box>
             </CardContent>

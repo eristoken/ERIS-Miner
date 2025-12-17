@@ -1,16 +1,19 @@
 import { ethers } from 'ethers';
 import { RpcManager } from './rpcManager';
-import { Settings, MiningStats, RpcEndpoint, LogEntry, Contracts } from '../types';
+import { Settings, MiningStats, RpcEndpoint, LogEntry } from '../types';
 import { addLog } from '../pages/Console';
 import ERC918_ABI from '../../abi.json';
 
 export class Miner {
   private rpcManager: RpcManager;
-  private settings: Settings;
+  private settings!: Settings;
   private isMining: boolean = false;
-  private isSubmitting: boolean = false;
+  private isSubmitting: boolean = false; // Used by queue processor to show UI state
   private stats: MiningStats;
   private workers: Worker[] = [];
+  private workerHashes: Map<number, number> = new Map(); // Track hashes per worker
+  private solutionQueue: Array<{ nonce: string; workerId: number; challenge: string }> = []; // Queue for all found solutions
+  private isProcessingQueue: boolean = false; // Flag to prevent multiple queue processors
   private contract: ethers.Contract | null = null;
   private wallet: ethers.Wallet | null = null;
   private provider: ethers.JsonRpcProvider | null = null;
@@ -34,6 +37,8 @@ export class Miner {
       isMining: false,
       solutionFound: false,
       isSubmitting: false,
+      pendingSolutions: 0,
+      errorMessage: null,
     };
   }
 
@@ -158,10 +163,9 @@ export class Miner {
         provider
       );
 
-      const [challenge, difficulty, target, reward] = await Promise.all([
+      const [challenge, difficulty, reward] = await Promise.all([
         contractWithNewProvider.getChallengeNumber(),
         contractWithNewProvider.getMiningDifficulty(),
-        contractWithNewProvider.getMiningTarget(),
         contractWithNewProvider.getMiningReward(),
       ]);
 
@@ -176,18 +180,8 @@ export class Miner {
     }
   }
 
-  private hash(challenge: string, address: string, nonce: bigint): bigint {
-    // Match FTIC-Miner's exact method: web3utils.sha3(challenge_number + hashingEthAddress.substring(2) + solution_number.substring(2))
-    // challenge_number keeps its 0x prefix, address and nonce have 0x removed
-    const addressHex = address.startsWith('0x') ? address.substring(2) : address;
-    const nonceHex = nonce.toString(16).padStart(64, '0'); // uint256 = 64 hex chars (32 bytes)
-    
-    // Concatenate: challenge (with 0x) + address (no 0x) + nonce (no 0x)
-    // This matches FTIC-Miner: challenge_number already has 0x, we just append the rest
-    const concatenated = challenge + addressHex + nonceHex;
-    const hash = ethers.keccak256(concatenated);
-    return BigInt(hash);
-  }
+  // Note: hash() method removed - now using Web Workers for true parallelism
+  // Workers handle hashing internally using js-sha3 library
 
   private async submitSolution(nonce: bigint, challenge: string): Promise<boolean> {
     if (!this.contract || !this.wallet) {
@@ -288,16 +282,38 @@ export class Miner {
         gasLimit = (estimatedGas * BigInt(120)) / BigInt(100);
         this.log('info', `Estimated gas: ${estimatedGas.toString()}, Using: ${gasLimit.toString()} (with 20% buffer)`);
       } catch (error: any) {
-        // If estimation fails, use configured gas limit (default 200000 from MVis-tokenminer)
-        gasLimit = BigInt(this.settings.gas_limit || 200000);
+        // Check if error is "Already rewarded in this block" - this means solution is invalid
+        const errorMsg = (error.message || '').toLowerCase();
+        if (errorMsg.includes('already rewarded') || errorMsg.includes('already rewarded in this block')) {
+          this.log('warn', 'Solution already submitted in this block by another miner, skipping...');
+          return false; // Skip this solution, continue mining
+        }
+        
+        // Check if error is "Digest exceeds target" - solution is invalid (stale challenge or wrong hash)
+        if (errorMsg.includes('digest exceeds target')) {
+          this.log('warn', 'Solution digest exceeds target (likely stale challenge), skipping...');
+          return false; // Skip this solution, continue mining
+        }
+        
+        // If estimation fails for other reasons, use configured gas limit (default 200000 from MVis-tokenminer)
+        const configuredLimit = BigInt(this.settings.gas_limit || 200000);
+        gasLimit = configuredLimit;
         this.log('warn', `Gas estimation failed: ${error.message}, using configured limit: ${gasLimit.toString()}`);
       }
 
-      // Ensure gas limit is at least the configured minimum
-      const minGasLimit = BigInt(this.settings.gas_limit || 200000);
-      if (gasLimit < minGasLimit) {
-        gasLimit = minGasLimit;
-        this.log('info', `Gas limit below minimum, using: ${gasLimit.toString()}`);
+      // Ensure gas limit is at least a safe minimum (100000) to prevent "intrinsic gas too low" errors
+      // The configured limit might be too low, so we enforce a minimum safe value
+      const safeMinimum = BigInt(100000);
+      if (gasLimit < safeMinimum) {
+        this.log('warn', `Gas limit ${gasLimit.toString()} is too low, using safe minimum: ${safeMinimum.toString()}`);
+        gasLimit = safeMinimum;
+      }
+      
+      // Also ensure it's at least the configured minimum (but don't go below safe minimum)
+      const configuredMin = BigInt(this.settings.gas_limit || 200000);
+      if (gasLimit < configuredMin && configuredMin >= safeMinimum) {
+        gasLimit = configuredMin;
+        this.log('info', `Gas limit below configured minimum, using: ${gasLimit.toString()}`);
       }
 
       const tx = await contractWithProvider.mint(nonce, challengeDigest, {
@@ -331,45 +347,123 @@ export class Miner {
 
       return true;
     } catch (error: any) {
-      this.log('error', `Failed to submit solution: ${error.message}`);
+      const errorMessage = (error.message || '').toLowerCase();
+      
+      // Check for "Already rewarded in this block" - this is expected and should be skipped
+      if (errorMessage.includes('already rewarded') || errorMessage.includes('already rewarded in this block')) {
+        this.log('warn', 'Solution already submitted in this block by another miner, skipping...');
+        return false; // Skip this solution, continue mining
+      }
+      
+      // Check for "Digest exceeds target" - solution is invalid (stale challenge or wrong hash)
+      if (errorMessage.includes('digest exceeds target')) {
+        this.log('warn', 'Solution digest exceeds target (likely stale challenge), skipping...');
+        return false; // Skip this solution, continue mining
+      }
+      
+      // Check if error is due to RPC rate limiting/throttling
+      const isRpcError = this.isRpcRateLimitError(error);
+      
+      if (isRpcError) {
+        // RPC rate limiting - try switching RPC
+        this.log('warn', `RPC rate limited during submission, attempting to switch RPC...`);
+        try {
+          const chainRpcs = await window.electronAPI.readRpcs();
+          if (chainRpcs && chainRpcs[this.settings.selected_chain_id]) {
+            await this.rpcManager.switchToNextRpc(
+              this.settings.selected_chain_id,
+              chainRpcs[this.settings.selected_chain_id]
+            );
+            this.log('info', 'RPC switched, retrying submission...');
+            // Retry submission once with new RPC
+            return await this.submitSolution(nonce, challenge);
+          }
+        } catch (switchError: any) {
+          this.log('error', `Failed to switch RPC: ${switchError.message}`);
+          // Fall through to stop miner
+        }
+      }
+      
+      // Non-RPC error or RPC switch failed - stop miner and show notification
+      const errorMsg = `Failed to submit solution: ${error.message}`;
+      this.log('error', errorMsg);
+      this.stats.errorMessage = errorMsg;
+      if (this.onStatsUpdate) {
+        this.onStatsUpdate({ ...this.stats });
+      }
+      
+      // Stop mining on submission error (except RPC errors which are handled above)
+      if (!isRpcError) {
+        this.log('error', 'Stopping miner due to submission error');
+        await this.stop();
+      }
+      
       return false;
     }
   }
 
-  private createWorker(): Worker {
-    // Create a web worker for mining
-    const workerCode = `
-      self.onmessage = function(e) {
-        const { challenge, address, startNonce, endNonce, target } = e.data;
-        
-        // Simple keccak256 implementation for worker
-        function keccak256(data) {
-          // This is a placeholder - in production, use a proper keccak256 library
-          // For now, we'll use a simple hash function
-          return BigInt('0x' + data);
-        }
-        
-        function hash(challenge, address, nonce) {
-          // Pack: bytes32 + address + uint256
-          const packed = challenge + address.slice(2) + nonce.toString(16).padStart(64, '0');
-          const hashHex = keccak256(packed);
-          return hashHex;
-        }
-        
-        for (let nonce = BigInt(startNonce); nonce <= BigInt(endNonce); nonce++) {
-          const hashValue = hash(challenge, address, nonce);
-          if (hashValue <= BigInt(target)) {
-            self.postMessage({ found: true, nonce: nonce.toString() });
-            return;
-          }
-        }
-        
-        self.postMessage({ found: false });
-      };
-    `;
+  /**
+   * Check if an error is due to RPC rate limiting or throttling
+   */
+  private isRpcRateLimitError(error: any): boolean {
+    if (!error) return false;
+    
+    const errorMessage = (error.message || '').toLowerCase();
+    const errorCode = error.code;
+    const errorStatus = error.status;
+    
+    // Check for common RPC rate limiting indicators
+    const rateLimitIndicators = [
+      'rate limit',
+      'rate exceeded',
+      'too many requests',
+      'throttle',
+      'throttled',
+      '429',
+      '503',
+      'service unavailable',
+      'timeout',
+      'connection',
+      'network',
+      'econnrefused',
+      'enotfound',
+    ];
+    
+    // Check error message
+    if (rateLimitIndicators.some(indicator => errorMessage.includes(indicator))) {
+      return true;
+    }
+    
+    // Check HTTP status codes (429 = Too Many Requests, 503 = Service Unavailable)
+    if (errorStatus === 429 || errorStatus === 503) {
+      return true;
+    }
+    
+    // Check ethers error codes
+    // SERVER_ERROR, TIMEOUT, NETWORK_ERROR, etc.
+    if (errorCode === 'SERVER_ERROR' || errorCode === 'TIMEOUT' || errorCode === 'NETWORK_ERROR') {
+      // But not CALL_EXCEPTION (contract execution errors)
+      if (errorCode !== 'CALL_EXCEPTION') {
+        return true;
+      }
+    }
+    
+    // Check for JSON-RPC error codes
+    // -32000 to -32099 are server errors
+    if (typeof errorCode === 'number' && errorCode >= -32099 && errorCode <= -32000) {
+      return true;
+    }
+    
+    return false;
+  }
 
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    return new Worker(URL.createObjectURL(blob));
+  private createWorker(): Worker {
+    // Create a web worker using the bundled worker file
+    // Vite will bundle this properly with ethers imported
+    return new Worker(
+      new URL('./miningWorker.ts', import.meta.url),
+      { type: 'module' }
+    );
   }
 
   async start() {
@@ -378,6 +472,12 @@ export class Miner {
     }
 
     try {
+      // Clear any previous error when starting
+      this.stats.errorMessage = null;
+      if (this.onStatsUpdate) {
+        this.onStatsUpdate({ ...this.stats });
+      }
+      
       await this.initialize();
       this.isMining = true;
       this.startTime = Date.now();
@@ -393,13 +493,17 @@ export class Miner {
       this.stats.tokensMinted = 0;
       this.stats.solutionFound = false;
       this.stats.isSubmitting = false;
+      this.stats.pendingSolutions = 0;
       if (this.onStatsUpdate) {
         this.onStatsUpdate({ ...this.stats });
       }
 
       this.log('success', 'Mining started');
-
-      // Start mining loop
+      
+      // Start queue processor in parallel (handles solution submissions with rate limiting)
+      this.processSolutionQueue();
+      
+      // Start mining loop (workers continuously mine and add solutions to queue)
       this.mine();
     } catch (error: any) {
       this.log('error', `Failed to start mining: ${error.message}`);
@@ -423,12 +527,157 @@ export class Miner {
     this.stats.tokensMinted = 0;
     this.stats.solutionFound = false;
     this.stats.isSubmitting = false;
+    // Don't clear errorMessage here - let user see it
     if (this.onStatsUpdate) {
       this.onStatsUpdate({ ...this.stats });
     }
-    this.workers.forEach((worker) => worker.terminate());
+    
+    // Stop all workers
+    this.workers.forEach((worker) => {
+      worker.postMessage({ stop: true });
+      worker.terminate();
+    });
     this.workers = [];
+    this.workerHashes.clear();
+    this.solutionQueue = [];
+    this.isProcessingQueue = false;
     this.log('info', 'Mining stopped');
+  }
+
+  /**
+   * Process solution queue with rate limiting
+   * This runs in parallel with mining, submitting solutions one at a time
+   */
+  private async processSolutionQueue() {
+    if (this.isProcessingQueue) {
+      return; // Already processing
+    }
+    
+    this.isProcessingQueue = true;
+    
+    while (this.isMining) {
+      if (this.solutionQueue.length === 0) {
+        // No solutions to process, wait a bit
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+      
+      // Get next solution from queue
+      const solution = this.solutionQueue.shift();
+      if (!solution) continue;
+      
+      // Update pending count before processing
+      this.stats.pendingSolutions = this.solutionQueue.length;
+      
+      // Set submission flag for UI
+      this.isSubmitting = true;
+      this.stats.isSubmitting = true;
+      // solutionFound should reflect if there are solutions (already set when solution was found)
+      // Keep it true if there are more solutions, or if this is the first one being processed
+      this.stats.solutionFound = true;
+      if (this.onStatsUpdate) {
+        this.onStatsUpdate({ ...this.stats });
+      }
+      
+      this.log('info', `Processing solution from queue (${this.solutionQueue.length} remaining)...`);
+      
+      // Validate solution before submission - check if challenge is still current
+      try {
+        if (!this.contract || !this.provider) {
+          this.log('warn', 'Contract or provider not available, skipping solution');
+          continue;
+        }
+        
+        const chainRpcs = await window.electronAPI.readRpcs();
+        if (!chainRpcs || !chainRpcs[this.settings.selected_chain_id]) {
+          this.log('warn', 'RPCs not available, skipping solution');
+          continue;
+        }
+        
+        let provider = this.provider;
+        try {
+          provider = await this.rpcManager.getProvider(
+            this.settings.selected_chain_id,
+            chainRpcs[this.settings.selected_chain_id]
+          );
+        } catch (error) {
+          await this.rpcManager.switchToNextRpc(
+            this.settings.selected_chain_id,
+            chainRpcs[this.settings.selected_chain_id]
+          );
+          provider = await this.rpcManager.getProvider(
+            this.settings.selected_chain_id,
+            chainRpcs[this.settings.selected_chain_id]
+          );
+        }
+        
+        const contractAddress = await this.getContractAddress();
+        const contractWithProvider = new ethers.Contract(
+          contractAddress,
+          ERC918_ABI,
+          provider
+        );
+        
+        // Fetch current challenge from contract
+        const currentChallenge = await contractWithProvider.getChallengeNumber();
+        const currentChallengeHex = ethers.hexlify(currentChallenge);
+        
+        // If solution's challenge doesn't match current challenge, skip it
+        if (solution.challenge.toLowerCase() !== currentChallengeHex.toLowerCase()) {
+          this.log('warn', `Solution challenge mismatch (queued: ${solution.challenge.substring(0, 10)}..., current: ${currentChallengeHex.substring(0, 10)}...), skipping stale solution`);
+          continue; // Skip this solution and process next one
+        }
+      } catch (error: any) {
+        this.log('warn', `Failed to validate solution challenge: ${error.message}, skipping solution`);
+        continue; // Skip this solution if validation fails
+      }
+      
+      try {
+        const submitted = await this.submitSolution(BigInt(solution.nonce), solution.challenge);
+        if (submitted) {
+          this.updateStats();
+          this.log('success', 'Solution submitted successfully');
+        } else {
+          // Error occurred, miner may have been stopped
+          if (!this.isMining) {
+            break;
+          }
+        }
+      } catch (error: any) {
+        this.log('error', `Failed to submit queued solution: ${error.message}`);
+        // If error stops the miner, exit
+        if (!this.isMining) {
+          break;
+        }
+      } finally {
+        // Clear submission flags and update pending count
+        this.isSubmitting = false;
+        this.stats.isSubmitting = false;
+        this.stats.pendingSolutions = this.solutionQueue.length;
+        
+        // Clear solutionFound flag if no more solutions in queue
+        // Otherwise keep it true to show there are still solutions pending
+        if (this.solutionQueue.length === 0) {
+          this.stats.solutionFound = false;
+        }
+        
+        if (this.onStatsUpdate) {
+          this.onStatsUpdate({ ...this.stats });
+        }
+      }
+      
+      // Apply RPC rate limiting between submissions
+      if (this.isMining && this.settings.rpc_rate_limit_ms > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.settings.rpc_rate_limit_ms));
+      }
+      
+      // Small delay even if rate limiting is disabled
+      if (this.isMining) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    
+    this.isProcessingQueue = false;
   }
 
   private async mine() {
@@ -482,36 +731,76 @@ export class Miner {
 
         const target = await contractWithProvider.getMiningTarget();
 
-        // Mine with multiple threads using random nonce generation (like FTIC-Miner)
+        // Mine with multiple threads using Web Workers for true parallelism
+        // Workers will continuously mine and add solutions to queue
         const threads = this.settings.cpu_thread_count;
-        const promises: Promise<void>[] = [];
-
-        // Reset submission flag before starting new mining round
-        this.isSubmitting = false;
-
-        // Each thread will generate random nonces independently (like FTIC-Miner)
-        for (let i = 0; i < threads; i++) {
-          promises.push(
-            this.mineRandom(challenge, this.settings.mining_account_public_address, BigInt(target.toString()))
-          );
-        }
-
-        // Wait for any thread to find a solution
-        await Promise.race(promises);
         
-        // If a solution was found and is being submitted, wait for submission to complete
-        if (this.isSubmitting) {
-          this.log('info', 'Waiting for solution submission to complete...');
-          // Wait until submission is complete (isSubmitting will be set to false after submission)
-          while (this.isSubmitting && this.isMining) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
+        // Only create workers if they don't exist
+        if (this.workers.length === 0) {
+          // Create Web Workers for true parallel processing
+          // Workers will continuously mine and add solutions to queue
+          for (let i = 0; i < threads; i++) {
+            const worker = this.createWorker();
+            this.workers.push(worker);
+            this.workerHashes.set(i, 0);
+            
+            // Set up worker message handler - no promises, just handle messages
+            worker.onmessage = (e: MessageEvent) => {
+              const { type, workerId, nonce, hashesProcessed, challenge: solutionChallenge } = e.data;
+              
+              if (type === 'progress') {
+                // Update hash count for this worker
+                this.workerHashes.set(workerId, hashesProcessed);
+                // Update total hashes (sum of all workers)
+                this.totalHashes = Array.from(this.workerHashes.values()).reduce((sum, count) => sum + count, 0);
+                this.updateStats();
+              } else if (type === 'solution') {
+                // Solution found! Add to queue and continue mining
+                this.log('success', `Solution found by worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
+                
+                // Add solution to queue
+                this.solutionQueue.push({ 
+                  nonce, 
+                  workerId, 
+                  challenge: solutionChallenge || challenge 
+                });
+                
+                // Update stats to show solution found and pending count
+                this.stats.solutionFound = true;
+                this.stats.pendingSolutions = this.solutionQueue.length;
+                if (this.onStatsUpdate) {
+                  this.onStatsUpdate({ ...this.stats });
+                }
+                
+                // Workers keep mining continuously - no pause/resume needed
+              } else if (type === 'stopped') {
+                // Worker stopped
+              }
+            };
+            
+            worker.onerror = (error) => {
+              this.log('error', `Worker ${i} error: ${error.message}`);
+            };
           }
-          this.log('info', 'Solution submission completed, resuming mining...');
           
-          // Wait a bit before fetching new challenge after successful submission
-          if (this.isMining) {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-          }
+          this.log('info', `Started ${threads} mining worker(s) for true parallel processing`);
+        }
+        
+        // Update existing workers with new challenge/target (if challenge changed)
+        // This allows workers to continue mining with updated parameters without resetting hash counts
+        for (let i = 0; i < this.workers.length; i++) {
+          this.workers[i].postMessage({
+            challenge,
+            address: this.settings.mining_account_public_address,
+            target: target.toString(),
+            workerId: i,
+          });
+        }
+        
+        // Keep workers running and periodically refresh challenge
+        // Workers will continuously mine and add solutions to queue
+        if (this.isMining) {
+          await new Promise((resolve) => setTimeout(resolve, 30000)); // Refresh challenge every 30 seconds
         }
         
         // Update stats after mining attempt
@@ -523,110 +812,8 @@ export class Miner {
     }
   }
 
-  /**
-   * Generate a random 64-bit nonce (like FTIC-Miner)
-   * Uses crypto.getRandomValues for better randomness
-   * FTIC-Miner generates random bytes and uses them directly as the nonce
-   */
-  private generateRandomNonce(): bigint {
-    // Generate random bytes for 64-bit nonce (8 bytes)
-    // Use Uint8Array for better control over byte generation
-    const bytes = new Uint8Array(8);
-    crypto.getRandomValues(bytes);
-    
-    // Convert to bigint (big-endian, matching Solidity uint256)
-    // This matches how FTIC-Miner's C++ code handles the bytes
-    let nonce = BigInt(0);
-    for (let i = 0; i < 8; i++) {
-      nonce = (nonce << BigInt(8)) | BigInt(bytes[i]);
-    }
-    
-    return nonce;
-  }
-
-  /**
-   * Mine using random nonce generation (like FTIC-Miner)
-   * Each thread generates completely random nonces independently
-   */
-  private async mineRandom(
-    challenge: string,
-    address: string,
-    target: bigint
-  ): Promise<void> {
-    // Larger batch size for better performance - reduce overhead
-    const batchSize = 10000;
-    let batchHashes = 0;
-    let yieldCounter = 0;
-
-    while (this.isMining && !this.isSubmitting) {
-      // Generate a batch of random nonces (like FTIC-Miner)
-      for (let i = 0; i < batchSize; i++) {
-        // Stop immediately if submission is in progress (another thread found a solution)
-        if (this.isSubmitting) {
-          return;
-        }
-
-        // Generate random nonce (like FTIC-Miner's random generation)
-        const nonce = this.generateRandomNonce();
-
-        // Use the hash method that matches the contract
-        const hashValue = this.hash(challenge, address, nonce);
-        this.totalHashes++;
-        batchHashes++;
-
-        if (hashValue <= target) {
-          // Solution found! Set flag to stop all other threads
-          this.isSubmitting = true;
-          this.stats.solutionFound = true;
-          this.stats.isSubmitting = true;
-          if (this.onStatsUpdate) {
-            this.onStatsUpdate({ ...this.stats });
-          }
-          this.log('success', `Solution found! Nonce: ${nonce.toString()}`);
-          this.log('info', 'Pausing all mining threads for submission...');
-          
-          try {
-            const submitted = await this.submitSolution(nonce, challenge);
-            if (submitted) {
-              // Update stats after successful submission
-              this.updateStats();
-            }
-          } catch (error: any) {
-            this.log('error', `Failed to submit solution: ${error.message}`);
-          } finally {
-            // Always clear submission flag after completion (success or failure)
-            this.isSubmitting = false;
-            this.stats.isSubmitting = false;
-            // Keep solutionFound flag for a bit so user can see it, then clear it
-            setTimeout(() => {
-              this.stats.solutionFound = false;
-              if (this.onStatsUpdate) {
-                this.onStatsUpdate({ ...this.stats });
-              }
-            }, 3000); // Clear after 3 seconds
-            if (this.onStatsUpdate) {
-              this.onStatsUpdate({ ...this.stats });
-            }
-          }
-          return;
-        }
-      }
-      
-      yieldCounter++;
-
-      // Yield less frequently to improve performance (every 5 batches = 50k hashes)
-      if (yieldCounter >= 5) {
-        yieldCounter = 0;
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-
-      // Update stats less frequently to reduce overhead (every 50k hashes)
-      if (batchHashes >= 50000) {
-        this.updateStats();
-        batchHashes = 0;
-      }
-    }
-  }
+  // Note: generateRandomNonce() and mineRandom() methods removed
+  // Now using Web Workers for true parallelism - workers handle nonce generation and hashing internally
 
   private updateStats() {
     const elapsed = (Date.now() - this.startTime) / 1000;
