@@ -141,16 +141,14 @@ export class Miner {
         );
       } catch (error) {
         // Rate limited, switch RPC
-        if (this.settings.mining_style === 'solo') {
-          await this.rpcManager.switchToNextRpc(
-            this.settings.selected_chain_id,
-            chainRpcs[this.settings.selected_chain_id]
-          );
-          provider = await this.rpcManager.getProvider(
-            this.settings.selected_chain_id,
-            chainRpcs[this.settings.selected_chain_id]
-          );
-        }
+        await this.rpcManager.switchToNextRpc(
+          this.settings.selected_chain_id,
+          chainRpcs[this.settings.selected_chain_id]
+        );
+        provider = await this.rpcManager.getProvider(
+          this.settings.selected_chain_id,
+          chainRpcs[this.settings.selected_chain_id]
+        );
       }
 
       const contractAddress = await this.getContractAddress();
@@ -209,16 +207,15 @@ export class Miner {
           chainRpcs[this.settings.selected_chain_id]
         );
       } catch (error) {
-        if (this.settings.mining_style === 'solo') {
-          await this.rpcManager.switchToNextRpc(
-            this.settings.selected_chain_id,
-            chainRpcs[this.settings.selected_chain_id]
-          );
-          provider = await this.rpcManager.getProvider(
-            this.settings.selected_chain_id,
-            chainRpcs[this.settings.selected_chain_id]
-          );
-        }
+        // Auto-switch to next RPC when rate limited
+        await this.rpcManager.switchToNextRpc(
+          this.settings.selected_chain_id,
+          chainRpcs[this.settings.selected_chain_id]
+        );
+        provider = await this.rpcManager.getProvider(
+          this.settings.selected_chain_id,
+          chainRpcs[this.settings.selected_chain_id]
+        );
       }
 
       const walletWithProvider = new ethers.Wallet(this.settings.mining_account_private_key, provider);
@@ -465,16 +462,15 @@ export class Miner {
             chainRpcs[this.settings.selected_chain_id]
           );
         } catch (error) {
-          if (this.settings.mining_style === 'solo') {
-            await this.rpcManager.switchToNextRpc(
-              this.settings.selected_chain_id,
-              chainRpcs[this.settings.selected_chain_id]
-            );
-            provider = await this.rpcManager.getProvider(
-              this.settings.selected_chain_id,
-              chainRpcs[this.settings.selected_chain_id]
-            );
-          }
+          // Auto-switch to next RPC when rate limited
+          await this.rpcManager.switchToNextRpc(
+            this.settings.selected_chain_id,
+            chainRpcs[this.settings.selected_chain_id]
+          );
+          provider = await this.rpcManager.getProvider(
+            this.settings.selected_chain_id,
+            chainRpcs[this.settings.selected_chain_id]
+          );
         }
 
         const contractAddress = await this.getContractAddress();

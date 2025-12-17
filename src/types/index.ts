@@ -1,9 +1,7 @@
 export interface Settings {
   mining_account_public_address: string;
   mining_account_private_key: string;
-  mining_style: 'solo' | 'pool';
   network_type: 'mainnet' | 'testnet';
-  pool_url: string;
   gas_price_gwei: number;
   priority_gas_fee_gwei: number;
   gas_limit: number;

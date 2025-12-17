@@ -66,11 +66,10 @@ The application stores configuration in `settings.json` (located in the Electron
 {
   "mining_account_public_address": "0x...",
   "mining_account_private_key": "0x...",
-  "mining_style": "solo",
-  "contract_address": "0x...",
-  "pool_url": "http://...",
+  "network_type": "mainnet",
   "gas_price_gwei": 1,
   "priority_gas_fee_gwei": 1,
+  "gas_limit": 200000,
   "cpu_thread_count": 1,
   "rpc_rate_limit_ms": 200,
   "rpc_switch_delay_seconds": 20,
@@ -99,12 +98,12 @@ RPC endpoints are organized by chain in `rpcs.json`. You can add/remove RPCs thr
 
 1. **Configure Settings**: Go to the Settings page and configure:
    - Mining account (public address and private key)
-   - Contract address
-   - Mining style (solo or pool)
+   - Network (mainnet or testnet)
    - Gas prices (can be less than 1 gwei, specified in wei)
+   - Gas limit (default: 200000)
    - CPU thread count
    - RPC rate limit (0 to disable)
-   - RPC switch delay (for solo mode)
+   - RPC switch delay
 
 2. **Manage RPCs**: Go to the RPCs page to:
    - Add new RPC endpoints for each chain
@@ -127,7 +126,7 @@ The miner implements the ERC-918 standard:
 ## RPC Rate Limiting
 
 - **Rate Limit**: Configurable delay between RPC calls (default: 200ms, set to 0 to disable)
-- **Auto-Switch**: In solo mode, automatically switches to the next RPC when rate limited
+- **Auto-Switch**: Automatically switches to the next RPC when rate limited
 - **Switch Delay**: Configurable delay before switching RPCs (default: 20 seconds)
 
 ## Gas Fees

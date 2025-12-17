@@ -305,14 +305,6 @@ export default function Home() {
               <Grid container spacing={2} sx={{ mt: 1 }}>
                 <Grid item xs={6} sm={3}>
                   <Typography variant="body2" color="text.secondary">
-                    Mining Style
-                  </Typography>
-                  <Typography variant="body1" sx={{ textTransform: 'capitalize' }}>
-                    {settings.mining_style}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6} sm={3}>
-                  <Typography variant="body2" color="text.secondary">
                     Network
                   </Typography>
                   <Typography variant="body1" sx={{ textTransform: 'capitalize' }}>

@@ -31,9 +31,7 @@ function initConfigFiles() {
   const defaultSettings = {
     mining_account_public_address: '0xYourMiningAddressHere',
     mining_account_private_key: '0xYourPrivateKeyHere',
-    mining_style: 'solo',
     network_type: 'mainnet',
-    pool_url: 'http://tokenminingpool.com:8080',
     gas_price_gwei: 1,
     priority_gas_fee_gwei: 1,
     gas_limit: 200000,
@@ -254,6 +252,16 @@ ipcMain.handle('read-settings', () => {
     // Migration: Add gas_limit if missing
     if (!settings.gas_limit) {
       settings.gas_limit = 200000; // Default from MVis-tokenminer
+      needsSave = true;
+    }
+    
+    // Migration: Remove pool-related fields if they exist
+    if ('mining_style' in settings) {
+      delete settings.mining_style;
+      needsSave = true;
+    }
+    if ('pool_url' in settings) {
+      delete settings.pool_url;
       needsSave = true;
     }
     

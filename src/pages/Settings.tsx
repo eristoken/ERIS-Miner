@@ -182,20 +182,6 @@ export default function Settings() {
 
             <Grid item xs={12} md={6}>
               <FormControl fullWidth margin="normal">
-                <InputLabel>Mining Style</InputLabel>
-                <Select
-                  value={settings.mining_style}
-                  label="Mining Style"
-                  onChange={(e) => handleChange('mining_style', e.target.value)}
-                >
-                  <MenuItem value="solo">Solo</MenuItem>
-                  <MenuItem value="pool">Pool</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth margin="normal">
                 <InputLabel>Network</InputLabel>
                 <Select
                   value={settings.network_type}
@@ -211,18 +197,6 @@ export default function Settings() {
                   {contracts[settings.network_type].name}: {contracts[settings.network_type].address}
                 </Typography>
               )}
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Pool URL"
-                value={settings.pool_url}
-                onChange={(e) => handleChange('pool_url', e.target.value)}
-                margin="normal"
-                disabled={settings.mining_style === 'solo'}
-                helperText={settings.mining_style === 'solo' ? 'Only used in pool mode' : ''}
-              />
             </Grid>
 
             <Grid item xs={12} md={6}>
