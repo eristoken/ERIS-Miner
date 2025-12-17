@@ -1,0 +1,45 @@
+{
+  "name": "eris-miner",
+  "version": "1.0.0",
+  "description": "ERC-918 Token Miner with Electron, React, TypeScript, and Material-UI",
+  "main": "dist-electron/main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "npm run build:electron && concurrently \"npm run dev:react\" \"npm run dev:electron\" \"npm run watch:electron\"",
+    "dev:react": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && electron .",
+    "watch:electron": "tsc -p electron --watch",
+    "build": "npm run build:react && npm run build:electron",
+    "build:react": "vite build",
+    "build:electron": "tsc -p electron",
+    "preview": "vite preview",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.13.0",
+    "@emotion/styled": "^11.13.0",
+    "@mui/icons-material": "^5.15.15",
+    "@mui/material": "^5.15.15",
+    "ethers": "^6.13.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "wouter": "^3.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.1",
+    "@typescript-eslint/parser": "^7.13.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "electron": "^39.2.7",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.7",
+    "typescript": "^5.5.3",
+    "vite": "^7.3.0",
+    "wait-on": "^7.2.0"
+  }
+}
