@@ -31,6 +31,7 @@ export default function Settings() {
   
   // Get available CPU threads
   const availableThreads = navigator.hardwareConcurrency || 1;
+  const recommendedThreads = Math.floor(availableThreads * 0.8);
 
   useEffect(() => {
     loadData();
@@ -267,7 +268,7 @@ export default function Settings() {
                 onChange={(e) => handleChange('cpu_thread_count', parseInt(e.target.value) || 1)}
                 margin="normal"
                 inputProps={{ min: 1, max: availableThreads }}
-                helperText={`Available threads: ${availableThreads} (recommended: ${availableThreads * .8})`}
+                helperText={`Available threads: ${availableThreads} (recommended: ${recommendedThreads})`}
               />
             </Grid>
 
