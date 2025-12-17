@@ -71,7 +71,7 @@ function App() {
           <AppBar position="static">
             <Toolbar>
               <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-                ERIS Miner - ERC-918 Token Miner
+                $ERIS Token Official GUI Miner
               </Typography>
             </Toolbar>
           </AppBar>

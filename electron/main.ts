@@ -13,6 +13,7 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 const SETTINGS_FILE = path.join(PROJECT_ROOT, 'settings.json');
 const CHAINS_FILE = path.join(PROJECT_ROOT, 'chains.json');
 const RPCS_FILE = path.join(PROJECT_ROOT, 'rpcs.json');
+const CONTRACTS_FILE = path.join(PROJECT_ROOT, 'contracts.json');
 
 // Log file paths for debugging
 console.log('Project root:', PROJECT_ROOT);
@@ -31,10 +32,11 @@ function initConfigFiles() {
     mining_account_public_address: '0xYourMiningAddressHere',
     mining_account_private_key: '0xYourPrivateKeyHere',
     mining_style: 'solo',
-    contract_address: '0xCeF263A2587fe8F9d4BEDAb339E4b5258ac07690',
+    network_type: 'mainnet',
     pool_url: 'http://tokenminingpool.com:8080',
     gas_price_gwei: 1,
     priority_gas_fee_gwei: 1,
+    gas_limit: 200000,
     cpu_thread_count: 1,
     rpc_rate_limit_ms: 200,
     rpc_switch_delay_seconds: 20,
@@ -193,6 +195,7 @@ function initConfigFiles() {
   if (!fs.existsSync(RPCS_FILE)) {
     fs.writeFileSync(RPCS_FILE, JSON.stringify(defaultRpcs, null, 2));
   }
+  // contracts.json should already exist, but we don't create a default here
 }
 
 function createWindow() {
@@ -244,7 +247,50 @@ ipcMain.handle('read-settings', () => {
       return null;
     }
     const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    return JSON.parse(data);
+    const settings = JSON.parse(data);
+    
+    let needsSave = false;
+    
+    // Migration: Add gas_limit if missing
+    if (!settings.gas_limit) {
+      settings.gas_limit = 200000; // Default from MVis-tokenminer
+      needsSave = true;
+    }
+    
+    // Migration: Convert old contract_address to network_type
+    if (settings.contract_address && !settings.network_type) {
+      // Try to determine network type from contract address
+      const contractsData = fs.existsSync(CONTRACTS_FILE) 
+        ? JSON.parse(fs.readFileSync(CONTRACTS_FILE, 'utf-8'))
+        : null;
+      
+      if (contractsData) {
+        if (contractsData.mainnet?.address === settings.contract_address) {
+          settings.network_type = 'mainnet';
+        } else if (contractsData.testnet?.address === settings.contract_address) {
+          settings.network_type = 'testnet';
+        } else {
+          // Default to mainnet if address doesn't match
+          settings.network_type = 'mainnet';
+        }
+      } else {
+        // Default to mainnet if contracts.json doesn't exist
+        settings.network_type = 'mainnet';
+      }
+      
+      // Remove old contract_address field
+      delete settings.contract_address;
+      needsSave = true;
+      console.log('Migrated settings: converted contract_address to network_type');
+    }
+    
+    // Save if any migrations were applied
+    if (needsSave) {
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+      console.log('Settings migrated and saved');
+    }
+    
+    return settings;
   } catch (error: any) {
     console.error(`Failed to read settings: ${error.message}`);
     console.error(`Settings file path: ${SETTINGS_FILE}`);
@@ -299,6 +345,21 @@ ipcMain.handle('write-rpcs', (_event: Electron.IpcMainInvokeEvent, rpcs: any) =>
   } catch (error: any) {
     console.error(`Failed to write RPCs: ${error.message}`);
     return false;
+  }
+});
+
+ipcMain.handle('read-contracts', () => {
+  try {
+    if (!fs.existsSync(CONTRACTS_FILE)) {
+      console.log(`Contracts file not found at: ${CONTRACTS_FILE}`);
+      return null;
+    }
+    const data = fs.readFileSync(CONTRACTS_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (error: any) {
+    console.error(`Failed to read contracts: ${error.message}`);
+    console.error(`Contracts file path: ${CONTRACTS_FILE}`);
+    return null;
   }
 });
 

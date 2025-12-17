@@ -2,14 +2,25 @@ export interface Settings {
   mining_account_public_address: string;
   mining_account_private_key: string;
   mining_style: 'solo' | 'pool';
-  contract_address: string;
+  network_type: 'mainnet' | 'testnet';
   pool_url: string;
   gas_price_gwei: number;
   priority_gas_fee_gwei: number;
+  gas_limit: number;
   cpu_thread_count: number;
   rpc_rate_limit_ms: number;
   rpc_switch_delay_seconds: number;
   selected_chain_id: string;
+}
+
+export interface Contract {
+  name: string;
+  address: string;
+}
+
+export interface Contracts {
+  mainnet: Contract;
+  testnet: Contract;
 }
 
 export interface Chain {
@@ -36,6 +47,8 @@ export interface MiningStats {
   currentDifficulty: string;
   currentReward: string;
   isMining: boolean;
+  solutionFound: boolean;
+  isSubmitting: boolean;
 }
 
 export interface LogEntry {
@@ -53,6 +66,7 @@ declare global {
       writeChains: (chains: Record<string, Chain>) => Promise<boolean>;
       readRpcs: () => Promise<Record<string, RpcEndpoint[]> | null>;
       writeRpcs: (rpcs: Record<string, RpcEndpoint[]>) => Promise<boolean>;
+      readContracts: () => Promise<Contracts | null>;
     };
   }
 }

@@ -1,4 +1,4 @@
-# ERIS Miner - ERC-918 Token Miner
+# $ERIS Token Official GUI Miner
 
 A modern, cross-platform desktop application for mining ERC-918 compliant tokens using Electron, React, TypeScript, and Material-UI.
 

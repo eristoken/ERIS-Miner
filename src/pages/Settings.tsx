@@ -12,16 +12,22 @@ import {
   FormControl,
   InputLabel,
   Select,
+  InputAdornment,
+  IconButton,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
-import { Settings as SettingsType, Chain } from '../types';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
+import { Settings as SettingsType, Chain, Contracts } from '../types';
 import { addLog } from './Console';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [chains, setChains] = useState<Record<string, Chain>>({});
+  const [contracts, setContracts] = useState<Contracts | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPrivateKey, setShowPrivateKey] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -29,9 +35,10 @@ export default function Settings() {
 
   const loadData = async () => {
     try {
-      const [loadedSettings, loadedChains] = await Promise.all([
+      const [loadedSettings, loadedChains, loadedContracts] = await Promise.all([
         window.electronAPI.readSettings(),
         window.electronAPI.readChains(),
+        window.electronAPI.readContracts(),
       ]);
 
       if (loadedSettings) {
@@ -48,6 +55,14 @@ export default function Settings() {
           timestamp: new Date(),
           level: 'info',
           message: 'Chains loaded from chains.json',
+        });
+      }
+      if (loadedContracts) {
+        setContracts(loadedContracts);
+        addLog({
+          timestamp: new Date(),
+          level: 'info',
+          message: 'Contracts loaded from contracts.json',
         });
       }
     } catch (err: any) {
@@ -144,11 +159,24 @@ export default function Settings() {
               <TextField
                 fullWidth
                 label="Mining Account (Private Key)"
-                type="password"
+                type={showPrivateKey ? 'text' : 'password'}
                 value={settings.mining_account_private_key}
                 onChange={(e) => handleChange('mining_account_private_key', e.target.value)}
                 margin="normal"
                 helperText="Keep this secure!"
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label="toggle private key visibility"
+                        onClick={() => setShowPrivateKey(!showPrivateKey)}
+                        edge="end"
+                      >
+                        {showPrivateKey ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
               />
             </Grid>
 
@@ -167,13 +195,22 @@ export default function Settings() {
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Contract Address"
-                value={settings.contract_address}
-                onChange={(e) => handleChange('contract_address', e.target.value)}
-                margin="normal"
-              />
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Network</InputLabel>
+                <Select
+                  value={settings.network_type}
+                  label="Network"
+                  onChange={(e) => handleChange('network_type', e.target.value)}
+                >
+                  <MenuItem value="mainnet">Mainnet</MenuItem>
+                  <MenuItem value="testnet">Testnet</MenuItem>
+                </Select>
+              </FormControl>
+              {contracts && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.75 }}>
+                  {contracts[settings.network_type].name}: {contracts[settings.network_type].address}
+                </Typography>
+              )}
             </Grid>
 
             <Grid item xs={12} md={6}>
@@ -208,13 +245,13 @@ export default function Settings() {
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
-                label="Gas Price (Gwei)"
+                label="Max Gas Price (Gwei)"
                 type="number"
                 value={settings.gas_price_gwei}
                 onChange={(e) => handleChange('gas_price_gwei', parseFloat(e.target.value) || 0)}
                 margin="normal"
                 inputProps={{ min: 0, step: 0.1 }}
-                helperText="Can be less than 1 (e.g., 0.1)"
+                helperText="Maximum fee per gas (calculated dynamically if lower)"
               />
             </Grid>
 
@@ -227,7 +264,20 @@ export default function Settings() {
                 onChange={(e) => handleChange('priority_gas_fee_gwei', parseFloat(e.target.value) || 0)}
                 margin="normal"
                 inputProps={{ min: 0, step: 0.1 }}
-                helperText="Can be less than 1 (e.g., 0.1)"
+                helperText="Miner tip (can be less than 1, e.g., 0.1)"
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Gas Limit"
+                type="number"
+                value={settings.gas_limit}
+                onChange={(e) => handleChange('gas_limit', parseInt(e.target.value) || 200000)}
+                margin="normal"
+                inputProps={{ min: 100000, max: 500000, step: 10000 }}
+                helperText="Gas limit for mint transactions (default: 200000)"
               />
             </Grid>
 

@@ -1,17 +1,8 @@
 import { ethers } from 'ethers';
 import { RpcManager } from './rpcManager';
-import { Settings, MiningStats, RpcEndpoint, LogEntry } from '../types';
+import { Settings, MiningStats, RpcEndpoint, LogEntry, Contracts } from '../types';
 import { addLog } from '../pages/Console';
-
-// ERC918 ABI - minimal interface for mining
-const ERC918_ABI = [
-  'function mint(uint256 nonce, bytes32 challenge_digest) external returns (bool)',
-  'function getChallengeNumber() external view returns (bytes32)',
-  'function getMiningDifficulty() external view returns (uint256)',
-  'function getMiningTarget() external view returns (uint256)',
-  'function getMiningReward() external view returns (uint256)',
-  'event Mint(address indexed from, uint256 rewardAmount, uint256 epochCount, bytes32 newChallengeNumber)',
-];
+import ERC918_ABI from '../../abi.json';
 
 export class Miner {
   private rpcManager: RpcManager;
@@ -41,6 +32,8 @@ export class Miner {
       currentDifficulty: '0',
       currentReward: '0',
       isMining: false,
+      solutionFound: false,
+      isSubmitting: false,
     };
   }
 
@@ -79,12 +72,24 @@ export class Miner {
     }
   }
 
+  private async getContractAddress(): Promise<string> {
+    const contracts = await window.electronAPI.readContracts();
+    if (!contracts) {
+      throw new Error('Failed to load contracts.json');
+    }
+    return contracts[this.settings.network_type].address;
+  }
+
   async initialize() {
     try {
       const chainRpcs = await window.electronAPI.readRpcs();
       if (!chainRpcs || !chainRpcs[this.settings.selected_chain_id]) {
         throw new Error(`No RPCs configured for chain ${this.settings.selected_chain_id}`);
       }
+
+      // Get chain name for logging
+      const chains = await window.electronAPI.readChains();
+      const chainName = chains?.[this.settings.selected_chain_id]?.name || `Chain ${this.settings.selected_chain_id}`;
 
       await this.rpcManager.initializeRpcs(
         this.settings.selected_chain_id,
@@ -97,13 +102,15 @@ export class Miner {
       );
 
       this.wallet = new ethers.Wallet(this.settings.mining_account_private_key, this.provider);
+      
+      const contractAddress = await this.getContractAddress();
       this.contract = new ethers.Contract(
-        this.settings.contract_address,
+        contractAddress,
         ERC918_ABI,
         this.wallet
       );
 
-      this.log('success', 'Miner initialized successfully');
+      this.log('success', `Miner initialized on ${chainName} (${this.settings.network_type}, contract: ${contractAddress})`);
     } catch (error: any) {
       this.log('error', `Failed to initialize miner: ${error.message}`);
       throw error;
@@ -146,8 +153,9 @@ export class Miner {
         }
       }
 
+      const contractAddress = await this.getContractAddress();
       const contractWithNewProvider = new ethers.Contract(
-        this.settings.contract_address,
+        contractAddress,
         ERC918_ABI,
         provider
       );
@@ -214,8 +222,9 @@ export class Miner {
       }
 
       const walletWithProvider = new ethers.Wallet(this.settings.mining_account_private_key, provider);
+      const contractAddress = await this.getContractAddress();
       const contractWithProvider = new ethers.Contract(
-        this.settings.contract_address,
+        contractAddress,
         ERC918_ABI,
         walletWithProvider
       );
@@ -229,21 +238,75 @@ export class Miner {
       );
 
       // Use EIP-1559 transaction format
-      // maxFeePerGas = total maximum fee (gasPrice setting)
-      // maxPriorityFeePerGas = tip to miner (priority fee setting)
-      const maxFeePerGas = ethers.parseUnits(
-        this.settings.gas_price_gwei.toString(),
-        'gwei'
-      );
-      const maxPriorityFeePerGas = ethers.parseUnits(
-        this.settings.priority_gas_fee_gwei.toString(),
-        'gwei'
-      );
+      // Calculate fees dynamically based on network conditions
+      let maxFeePerGas: bigint;
+      let maxPriorityFeePerGas: bigint;
+      
+      try {
+        // Get current fee data from the network
+        const feeData = await provider.getFeeData();
+        
+        // Calculate maxPriorityFeePerGas (miner tip)
+        // Use user's priority fee setting, but ensure it's at least the network's suggested priority fee
+        const userPriorityFee = ethers.parseUnits(
+          this.settings.priority_gas_fee_gwei.toString(),
+          'gwei'
+        );
+        maxPriorityFeePerGas = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > userPriorityFee
+          ? feeData.maxPriorityFeePerGas
+          : userPriorityFee;
+        
+        // Calculate maxFeePerGas
+        // maxFeePerGas = (baseFee * 2) + maxPriorityFeePerGas
+        // This ensures we can pay for base fee + priority fee even if base fee increases
+        const baseFee = feeData.gasPrice || feeData.maxFeePerGas || ethers.parseUnits('1', 'gwei');
+        const calculatedMaxFee = (baseFee * BigInt(2)) + maxPriorityFeePerGas;
+        
+        // Use user's max fee setting if provided, otherwise use calculated value
+        const userMaxFee = ethers.parseUnits(
+          this.settings.gas_price_gwei.toString(),
+          'gwei'
+        );
+        maxFeePerGas = userMaxFee > calculatedMaxFee ? userMaxFee : calculatedMaxFee;
+        
+        this.log('info', `Gas fees - Base: ${ethers.formatUnits(baseFee, 'gwei')} gwei, Priority: ${ethers.formatUnits(maxPriorityFeePerGas, 'gwei')} gwei, Max: ${ethers.formatUnits(maxFeePerGas, 'gwei')} gwei`);
+      } catch (error) {
+        // Fallback to user settings if fee data unavailable
+        this.log('warn', 'Could not fetch network fee data, using configured values');
+        maxFeePerGas = ethers.parseUnits(
+          this.settings.gas_price_gwei.toString(),
+          'gwei'
+        );
+        maxPriorityFeePerGas = ethers.parseUnits(
+          this.settings.priority_gas_fee_gwei.toString(),
+          'gwei'
+        );
+      }
+
+      // Estimate gas limit with buffer, fallback to configured value
+      let gasLimit: bigint;
+      try {
+        const estimatedGas = await contractWithProvider.mint.estimateGas(nonce, challengeDigest);
+        // Add 20% buffer to estimated gas to prevent out-of-gas errors
+        gasLimit = (estimatedGas * BigInt(120)) / BigInt(100);
+        this.log('info', `Estimated gas: ${estimatedGas.toString()}, Using: ${gasLimit.toString()} (with 20% buffer)`);
+      } catch (error: any) {
+        // If estimation fails, use configured gas limit (default 200000 from MVis-tokenminer)
+        gasLimit = BigInt(this.settings.gas_limit || 200000);
+        this.log('warn', `Gas estimation failed: ${error.message}, using configured limit: ${gasLimit.toString()}`);
+      }
+
+      // Ensure gas limit is at least the configured minimum
+      const minGasLimit = BigInt(this.settings.gas_limit || 200000);
+      if (gasLimit < minGasLimit) {
+        gasLimit = minGasLimit;
+        this.log('info', `Gas limit below minimum, using: ${gasLimit.toString()}`);
+      }
 
       const tx = await contractWithProvider.mint(nonce, challengeDigest, {
         maxFeePerGas,
         maxPriorityFeePerGas,
-        gasLimit: 100000,
+        gasLimit,
       });
 
       this.log('info', `Transaction submitted: ${tx.hash}`);
@@ -263,7 +326,7 @@ export class Miner {
       if (mintEvent) {
         const parsed = contractWithProvider.interface.parseLog(mintEvent);
         if (parsed) {
-          const rewardAmount = parsed.args.rewardAmount;
+          const rewardAmount = parsed.args.reward_amount;
           this.tokensMinted += Number(ethers.formatEther(rewardAmount));
           this.solutionsFound++;
         }
@@ -331,6 +394,8 @@ export class Miner {
       this.stats.totalHashes = 0;
       this.stats.solutionsFound = 0;
       this.stats.tokensMinted = 0;
+      this.stats.solutionFound = false;
+      this.stats.isSubmitting = false;
       if (this.onStatsUpdate) {
         this.onStatsUpdate({ ...this.stats });
       }
@@ -359,6 +424,8 @@ export class Miner {
     this.stats.totalHashes = 0;
     this.stats.solutionsFound = 0;
     this.stats.tokensMinted = 0;
+    this.stats.solutionFound = false;
+    this.stats.isSubmitting = false;
     if (this.onStatsUpdate) {
       this.onStatsUpdate({ ...this.stats });
     }
@@ -410,8 +477,9 @@ export class Miner {
           }
         }
 
+        const contractAddress = await this.getContractAddress();
         const contractWithProvider = new ethers.Contract(
-          this.settings.contract_address,
+          contractAddress,
           ERC918_ABI,
           provider
         );
@@ -513,6 +581,11 @@ export class Miner {
         if (hashValue <= target) {
           // Solution found! Set flag to stop all other threads
           this.isSubmitting = true;
+          this.stats.solutionFound = true;
+          this.stats.isSubmitting = true;
+          if (this.onStatsUpdate) {
+            this.onStatsUpdate({ ...this.stats });
+          }
           this.log('success', `Solution found! Nonce: ${nonce.toString()}`);
           this.log('info', 'Pausing all mining threads for submission...');
           
@@ -527,6 +600,17 @@ export class Miner {
           } finally {
             // Always clear submission flag after completion (success or failure)
             this.isSubmitting = false;
+            this.stats.isSubmitting = false;
+            // Keep solutionFound flag for a bit so user can see it, then clear it
+            setTimeout(() => {
+              this.stats.solutionFound = false;
+              if (this.onStatsUpdate) {
+                this.onStatsUpdate({ ...this.stats });
+              }
+            }, 3000); // Clear after 3 seconds
+            if (this.onStatsUpdate) {
+              this.onStatsUpdate({ ...this.stats });
+            }
           }
           return;
         }
