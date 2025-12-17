@@ -23,6 +23,7 @@ export class Miner {
   private totalHashes: number = 0;
   private solutionsFound: number = 0;
   private tokensMinted: number = 0;
+  private failedSolutions: number = 0;
 
   constructor(rpcManager: RpcManager) {
     this.rpcManager = rpcManager;
@@ -31,6 +32,7 @@ export class Miner {
       totalHashes: 0,
       solutionsFound: 0,
       tokensMinted: 0,
+      failedSolutions: 0,
       currentChallenge: '0x',
       currentDifficulty: '0',
       currentReward: '0',
@@ -487,6 +489,7 @@ export class Miner {
       this.totalHashes = 0;
       this.solutionsFound = 0;
       this.tokensMinted = 0;
+      this.failedSolutions = 0;
       this.stats.isMining = true;
 
       // Reset displayed stats when starting
@@ -494,6 +497,7 @@ export class Miner {
       this.stats.totalHashes = 0;
       this.stats.solutionsFound = 0;
       this.stats.tokensMinted = 0;
+      this.stats.failedSolutions = 0;
       this.stats.solutionFound = false;
       this.stats.isSubmitting = false;
       this.stats.pendingSolutions = 0;
@@ -515,35 +519,46 @@ export class Miner {
     }
   }
 
-  stop() {
+  async stop() {
+    // Set flag first to signal loops to exit
     this.isMining = false;
-    this.isSubmitting = false; // Clear submission flag when stopping
+    this.isSubmitting = false;
     this.stats.isMining = false;
-    // Reset stats when stopping so UI toggles off cleanly
-    this.startTime = 0;
-    this.totalHashes = 0;
-    this.solutionsFound = 0;
-    this.tokensMinted = 0;
-    this.stats.hashesPerSecond = 0;
-    this.stats.totalHashes = 0;
-    this.stats.solutionsFound = 0;
-    this.stats.tokensMinted = 0;
-    this.stats.solutionFound = false;
-    this.stats.isSubmitting = false;
-    // Don't clear errorMessage here - let user see it
-    if (this.onStatsUpdate) {
-      this.onStatsUpdate({ ...this.stats });
-    }
     
-    // Stop all workers
+    // Stop all workers immediately
     this.workers.forEach((worker) => {
       worker.postMessage({ stop: true });
       worker.terminate();
     });
     this.workers = [];
     this.workerHashes.clear();
+    
+    // Clear solution queue
     this.solutionQueue = [];
     this.isProcessingQueue = false;
+    
+    // Wait a bit for loops to check the flag and exit
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    
+    // Reset stats when stopping so UI toggles off cleanly
+    this.startTime = 0;
+    this.totalHashes = 0;
+    this.solutionsFound = 0;
+    this.tokensMinted = 0;
+    this.failedSolutions = 0;
+    this.stats.hashesPerSecond = 0;
+    this.stats.totalHashes = 0;
+    this.stats.solutionsFound = 0;
+    this.stats.tokensMinted = 0;
+    this.stats.failedSolutions = 0;
+    this.stats.solutionFound = false;
+    this.stats.isSubmitting = false;
+    this.stats.pendingSolutions = 0;
+    // Don't clear errorMessage here - let user see it
+    if (this.onStatsUpdate) {
+      this.onStatsUpdate({ ...this.stats });
+    }
+    
     this.log('info', 'Mining stopped');
   }
 
@@ -640,7 +655,12 @@ export class Miner {
         }
         
         // If validation failed, skip submission but continue processing queue
-        if (!shouldSkip) {
+        if (shouldSkip) {
+          // Count as failed solution
+          this.failedSolutions++;
+          this.stats.failedSolutions = this.failedSolutions;
+          this.updateStats();
+        } else {
           // Submit the solution
           try {
             const submitted = await this.submitSolution(BigInt(solution.nonce), solution.challenge);
@@ -650,12 +670,20 @@ export class Miner {
               this.updateStats();
               this.log('success', 'Solution submitted successfully');
             } else {
+              // Submission failed (non-fatal error like "Already rewarded")
+              this.failedSolutions++;
+              this.stats.failedSolutions = this.failedSolutions;
+              this.updateStats();
               // Error occurred, miner may have been stopped
               if (!this.isMining) {
                 break;
               }
             }
           } catch (error: any) {
+            // Submission error - count as failed
+            this.failedSolutions++;
+            this.stats.failedSolutions = this.failedSolutions;
+            this.updateStats();
             this.log('error', `Failed to submit queued solution: ${error.message}`);
             // If error stops the miner, exit
             if (!this.isMining) {
@@ -700,8 +728,14 @@ export class Miner {
   private async mine() {
     while (this.isMining) {
       try {
+        // Check flag before each operation
+        if (!this.isMining) break;
+        
         // Yield to event loop before starting to prevent blocking
         await new Promise((resolve) => setTimeout(resolve, 0));
+        
+        // Check flag again after yield
+        if (!this.isMining) break;
         
         // Fetch current contract state
         const { challenge, difficulty, reward } = await this.fetchContractData();
@@ -709,15 +743,20 @@ export class Miner {
         this.stats.currentDifficulty = difficulty;
         this.stats.currentReward = reward;
 
+        // Check flag before continuing
+        if (!this.isMining) break;
+        
         // Get mining target
         if (!this.contract || !this.provider) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!this.isMining) break;
           continue;
         }
 
         const chainRpcs = await window.electronAPI.readRpcs();
         if (!chainRpcs || !chainRpcs[this.settings.selected_chain_id]) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!this.isMining) break;
           continue;
         }
 
@@ -816,8 +855,9 @@ export class Miner {
         
         // Keep workers running and periodically refresh challenge
         // Workers will continuously mine and add solutions to queue
-        if (this.isMining) {
-          await new Promise((resolve) => setTimeout(resolve, 30000)); // Refresh challenge every 30 seconds
+        // Check flag periodically and break if stopped
+        for (let i = 0; i < 30 && this.isMining; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Check every second
         }
         
         // Update stats after mining attempt
@@ -833,11 +873,20 @@ export class Miner {
   // Now using Web Workers for true parallelism - workers handle nonce generation and hashing internally
 
   private updateStats() {
+    // Don't update stats if mining is stopped (prevents overwriting stopped state)
+    if (!this.isMining && !this.stats.isMining) {
+      return;
+    }
+    
     const elapsed = (Date.now() - this.startTime) / 1000;
     this.stats.hashesPerSecond = elapsed > 0 ? this.totalHashes / elapsed : 0;
     this.stats.totalHashes = this.totalHashes;
     this.stats.solutionsFound = this.solutionsFound;
     this.stats.tokensMinted = this.tokensMinted;
+    this.stats.failedSolutions = this.failedSolutions;
+    
+    // Ensure isMining flag matches internal state
+    this.stats.isMining = this.isMining;
 
     if (this.onStatsUpdate) {
       this.onStatsUpdate({ ...this.stats });

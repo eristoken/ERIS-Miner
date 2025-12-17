@@ -33,6 +33,7 @@ export default function Home() {
     totalHashes: 0,
     solutionsFound: 0,
     tokensMinted: 0,
+    failedSolutions: 0,
     pendingSolutions: 0,
     currentChallenge: '0x',
     currentDifficulty: '0',
@@ -176,8 +177,11 @@ export default function Home() {
         level: 'info',
         message: 'Stopping miner via UI toggle',
       });
-      miner.stop();
-      setStats((prev: MiningStats) => ({ ...prev, isMining: false }));
+      // Stop mining and wait for it to complete
+      await miner.stop();
+      // Get fresh stats from miner to ensure state is correct
+      const stoppedStats = miner.getStats();
+      setStats(stoppedStats);
     } else {
       addLog({
         timestamp: new Date(),
@@ -320,7 +324,7 @@ export default function Home() {
               >
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
-                    Mining Statistics
+                    Mining Statistics (Current Run)
                   </Typography>
                   <Grid container spacing={3} sx={{ mt: 1 }}>
                     <Grid item xs={6} sm={4} md={2.4}>
@@ -371,6 +375,16 @@ export default function Home() {
                         </Typography>
                         <Typography variant="h5" color={stats.pendingSolutions > 0 ? 'primary' : 'text.primary'}>
                           {stats.pendingSolutions}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Failed Solutions
+                        </Typography>
+                        <Typography variant="h5" color={stats.failedSolutions > 0 ? 'error' : 'text.primary'}>
+                          {stats.failedSolutions}
                         </Typography>
                       </Box>
                     </Grid>

@@ -41,6 +41,7 @@ export interface MiningStats {
   totalHashes: number;
   solutionsFound: number;
   tokensMinted: number;
+  failedSolutions: number;
   currentChallenge: string;
   currentDifficulty: string;
   currentReward: string;
