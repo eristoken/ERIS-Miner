@@ -1,6 +1,6 @@
 {
   "name": "eris-miner",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "ERC-918 Token Miner with Electron, React, TypeScript, and Material-UI",
   "main": "dist-electron/main.js",
   "author": "",
@@ -14,7 +14,14 @@
     "build:react": "vite build",
     "build:electron": "tsc -p electron",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "package": "electron-forge package",
+    "package:mac": "electron-forge package --platform=darwin",
+    "package:win": "electron-forge package --platform=win32",
+    "make": "electron-forge make",
+    "make:mac": "electron-forge make --platform=darwin",
+    "make:win": "electron-forge make --platform=win32",
+    "publish": "electron-forge publish"
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",
@@ -27,6 +34,11 @@
     "wouter": "^3.8.1"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.5.0",
+    "@electron-forge/maker-dmg": "^7.5.0",
+    "@electron-forge/maker-squirrel": "^7.5.0",
+    "@electron-forge/maker-wix": "^7.5.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.5.0",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -41,5 +53,54 @@
     "typescript": "^5.5.3",
     "vite": "^7.3.0",
     "wait-on": "^7.2.0"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "name": "ERIS-Miner",
+        "executableName": "eris-miner",
+        "icon": "./eris_token_app_icon",
+        "osxSign": {
+          "identity": "@env:APPLE_SIGNING_IDENTITY",
+          "hardenedRuntime": true,
+          "entitlements": "entitlements.plist",
+          "entitlementsInherit": "entitlements.plist"
+        },
+        "osxNotarize": {
+          "tool": "notarytool",
+          "appleId": "@env:APPLE_ID",
+          "appleIdPassword": "@env:APPLE_ID_PASSWORD",
+          "teamId": "@env:APPLE_TEAM_ID"
+        }
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-dmg",
+          "config": {
+            "name": "ERIS-Miner",
+            "icon": "./eris_token_app_icon.png"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-wix",
+          "config": {
+            "name": "ERIS-Miner",
+            "description": "ERC-918 Token Miner",
+            "icon": "./eris_token_app_icon.png",
+            "ui": {
+              "chooseDirectory": true
+            },
+            "certificateFile": "@env:WINDOWS_CERTIFICATE_FILE",
+            "certificatePassword": "@env:WINDOWS_CERTIFICATE_PASSWORD"
+          }
+        }
+      ],
+      "plugins": [
+        {
+          "name": "@electron-forge/plugin-auto-unpack-natives",
+          "config": {}
+        }
+      ]
+    }
   }
 }

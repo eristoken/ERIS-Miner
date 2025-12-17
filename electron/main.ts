@@ -14,6 +14,7 @@ const SETTINGS_FILE = path.join(PROJECT_ROOT, 'settings.json');
 const CHAINS_FILE = path.join(PROJECT_ROOT, 'chains.json');
 const RPCS_FILE = path.join(PROJECT_ROOT, 'rpcs.json');
 const CONTRACTS_FILE = path.join(PROJECT_ROOT, 'contracts.json');
+const APP_ICON = path.join(PROJECT_ROOT, 'eris_token_app_icon.png');
 
 // Log file paths for debugging
 console.log('Project root:', PROJECT_ROOT);
@@ -200,6 +201,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

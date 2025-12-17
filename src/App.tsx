@@ -17,6 +17,7 @@ import Home from './pages/Home';
 import Settings from './pages/Settings';
 import RpcManagement from './pages/RpcManagement';
 import Console from './pages/Console';
+import About from './pages/About';
 
 const theme = createTheme({
   palette: {
@@ -40,11 +41,12 @@ function NavigationTabs() {
     else if (path === '/settings') setValue(1);
     else if (path === '/rpcs') setValue(2);
     else if (path === '/console') setValue(3);
+    else if (path === '/about') setValue(4);
   }, [location]);
 
   const handleChange = (_: React.SyntheticEvent, newValue: number) => {
     setValue(newValue);
-    const paths = ['/', '/settings', '/rpcs', '/console'];
+    const paths = ['/', '/settings', '/rpcs', '/console', '/about'];
     setLocation(paths[newValue]);
   };
 
@@ -58,6 +60,7 @@ function NavigationTabs() {
       <Tab label="Settings" />
       <Tab label="RPCs" />
       <Tab label="Console" />
+      <Tab label="About" />
     </Tabs>
   );
 }
@@ -81,6 +84,7 @@ function App() {
             <Route path="/settings" component={Settings} />
             <Route path="/rpcs" component={RpcManagement} />
             <Route path="/console" component={Console} />
+            <Route path="/about" component={About} />
           </Container>
         </Box>
       </Router>

@@ -1,0 +1,58 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+      
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: eris-miner-macos-${{ inputs.version }}
+          path: ./artifacts/macos
+      
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: eris-miner-windows-${{ inputs.version }}
+          path: ./artifacts/windows
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.version }}
+          name: Release ${{ inputs.version }}
+          body: |
+            ## ERIS Miner ${{ inputs.version }}
+            
+            ${{ inputs.release_notes }}
+            
+            ### Downloads
+            - **macOS**: Download the DMG file below
+            - **Windows**: Download the MSIX file below
+          files: |
+            ./artifacts/macos/*.dmg
+            ./artifacts/windows/*.msix
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
