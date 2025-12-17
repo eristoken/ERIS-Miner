@@ -1,0 +1,15 @@
+
+{
+  "networks": {
+      "mainnet": {
+              "contracts": {
+                "_fucktrumpindexcoin": {"name":"Fuck Trump Index Coin", "blockchain_address":"0xae80e9FF0e624C44C252aD950DbF39ac9BdB9E4f"}
+              }
+            },
+      "testnet": {
+              "contracts": {
+                "_fucktrumpindexcoin": {"name":"Fuck Trump Index Coin", "blockchain_address":"0xCeF263A2587fe8F9d4BEDAb339E4b5258ac07690"}
+              }
+            }
+    }
+}

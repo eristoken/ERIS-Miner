@@ -1,0 +1,31 @@
+{
+  "1": {
+    "name": "Ethereum Mainnet",
+    "chainId": 1
+  },
+  "56": {
+    "name": "BNB Chain",
+    "chainId": 56
+  },
+  "137": {
+    "name": "Polygon",
+    "chainId": 137
+  },
+  "42161": {
+    "name": "Arbitrum One",
+    "chainId": 42161
+  },
+  "8453": {
+    "name": "Base",
+    "chainId": 8453
+  },
+  "84532": {
+    "name": "Base Sepolia",
+    "chainId": 84532
+  },
+  "11155111": {
+    "name": "Ethereum Sepolia",
+    "chainId": 11155111
+  }
+}
+

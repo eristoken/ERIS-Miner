@@ -1,0 +1,136 @@
+.mining-dashboard {
+  width: 100%;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.dashboard-header h2 {
+  font-size: 1.8rem;
+  color: #fff;
+}
+
+.mining-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.btn-start,
+.btn-stop {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-start {
+  background: #00aa00;
+  color: #fff;
+}
+
+.btn-start:hover {
+  background: #00cc00;
+}
+
+.btn-stop {
+  background: #cc0000;
+  color: #fff;
+}
+
+.btn-stop:hover {
+  background: #ff0000;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #3a3a3a;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #666;
+  transition: background 0.2s;
+}
+
+.status-indicator.active .status-dot {
+  background: #00ff00;
+  box-shadow: 0 0 8px #00ff00;
+}
+
+.status-indicator.inactive .status-dot {
+  background: #666;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
+
+.stat-card {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  border-color: #4a4a4a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #fff;
+  word-break: break-all;
+}
+
+.stat-value.success {
+  color: #00ff00;
+}
+
+.stat-value.error {
+  color: #ff4444;
+}
+
+.stat-value.small {
+  font-size: 1rem;
+  font-family: 'Courier New', monospace;
+  color: #aaa;
+}
+
+.no-stats {
+  text-align: center;
+  padding: 3rem;
+  color: #888;
+  font-size: 1.1rem;
+}
+

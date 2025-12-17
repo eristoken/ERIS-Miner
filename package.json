@@ -1,0 +1,44 @@
+{
+  "name": "eris-miner",
+  "version": "1.0.0",
+  "description": "ERIS Token CPU Miner with Electron GUI",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:electron && concurrently \"npm run dev:vite\" \"npm run dev:electron\" \"npm run watch:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && electron .",
+    "watch:electron": "concurrently -n \"main,preload\" -c \"blue,green\" \"tsc -p tsconfig.node.json --watch\" \"tsc -p tsconfig.preload.json --watch\"",
+    "build": "npm run build:native && npm run build:electron && vite build && electron-builder",
+    "build:electron": "tsc -p tsconfig.node.json && tsc -p tsconfig.preload.json && (mv dist-electron/preload.js dist-electron/preload.cjs 2>/dev/null || true)",
+    "build:native": "node-gyp configure build",
+    "rebuild:native": "node-gyp rebuild",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ethereumjs/common": "^10.1.0",
+    "@ethereumjs/tx": "^10.1.0",
+    "bn.js": "^5.2.1",
+    "ethers": "^6.13.4",
+    "jayson": "^4.2.0",
+    "leftpad": "^0.0.1",
+    "nan": "^2.21.0",
+    "node-localstorage": "^3.0.5",
+    "web3-utils": "1.2.11"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "node-gyp": "^10.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1"
+  }
+}
