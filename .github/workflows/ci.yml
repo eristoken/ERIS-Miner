@@ -302,14 +302,14 @@ jobs:
         with:
           name: eris-miner-macos-dmg-${{ steps.version.outputs.version }}
           path: ./artifacts/macos
-          continue-on-error: true
+          if-no-files-found: warn
       
       - name: Download Windows MSI artifact
         uses: actions/download-artifact@v4
         with:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
           path: ./artifacts/windows
-          continue-on-error: true
+          if-no-files-found: warn
       
       - name: Verify artifacts are extracted
         run: |
