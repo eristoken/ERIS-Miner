@@ -128,15 +128,17 @@ jobs:
           if [ -n "$FINAL_IDENTITY" ]; then
             echo "Code signing will be configured with identity: $FINAL_IDENTITY"
             echo "APPLE_SIGNING_IDENTITY=$FINAL_IDENTITY" >> $GITHUB_ENV
+            echo "CODE_SIGNING_ENABLED=true" >> $GITHUB_ENV
           else
             echo "APPLE_SIGNING_IDENTITY=" >> $GITHUB_ENV
+            echo "CODE_SIGNING_ENABLED=false" >> $GITHUB_ENV
           fi
       
       - name: Package for macOS
         run: npm run make:mac
       
       - name: Remove quarantine and fix permissions (for unsigned apps)
-        if: env.APPLE_SIGNING_IDENTITY == ''
+        if: env.CODE_SIGNING_ENABLED != 'true'
         run: |
           # Remove quarantine attribute so macOS doesn't block unsigned apps
           find out/make -name "*.app" -exec xattr -cr {} \;
