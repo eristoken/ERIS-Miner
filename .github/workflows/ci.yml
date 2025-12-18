@@ -84,7 +84,7 @@ jobs:
   package-macos:
     runs-on: macos-latest
     needs: build
-    if: always() && (needs.build.result == 'success' || inputs.build_run_id != '') && (github.event_name == 'push' || inputs.run_package_macos == true)
+    if: always() && (needs.build.result == 'success' || inputs.build_run_id != '') && (github.event_name == 'workflow_dispatch' && inputs.run_package_macos == true)
     
     steps:
       - name: Checkout code
@@ -156,7 +156,7 @@ jobs:
   package-windows:
     runs-on: windows-latest
     needs: build
-    if: always() && (needs.build.result == 'success' || inputs.build_run_id != '') && (github.event_name == 'push' || inputs.run_package_windows == true)
+    if: always() && (needs.build.result == 'success' || inputs.build_run_id != '') && (github.event_name == 'workflow_dispatch' && inputs.run_package_windows == true)
     
     steps:
       - name: Checkout code
