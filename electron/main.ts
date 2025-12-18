@@ -198,23 +198,76 @@ function initConfigFiles() {
 }
 
 function createWindow() {
+  // Resolve preload path - works in both dev and production
+  const preloadPath = path.join(__dirname, 'preload.js');
+  console.log('Preload path:', preloadPath);
+  console.log('Preload exists:', fs.existsSync(preloadPath));
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
     },
+    show: false, // Don't show until ready
+  });
+
+  // Show window when ready to prevent visual flash
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow) {
+      mainWindow.show();
+    }
+  });
+
+  // Fallback: show window after timeout in case ready-to-show never fires
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      console.log('Window not shown after timeout, forcing show...');
+      mainWindow.show();
+    }
+  }, 3000);
+
+  // Handle load errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Failed to load:', errorCode, errorDescription, validatedURL);
+    if (mainWindow) {
+      mainWindow.show(); // Show window even on error for debugging
+    }
   });
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // In production, resolve path relative to __dirname
+    // __dirname in packaged app: app.asar/dist-electron
+    // So ../dist/index.html resolves to app.asar/dist/index.html
+    const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
+    console.log('Loading index.html from:', indexPath);
+    console.log('App path:', app.getAppPath());
+    console.log('__dirname:', __dirname);
+    console.log('isPackaged:', app.isPackaged);
+    
+    // loadFile works with asar paths, so we don't need to check existsSync
+    // The error handler above will catch any load failures
+    mainWindow.loadFile(indexPath).catch((error) => {
+      console.error('Failed to load index.html:', error);
+      if (!mainWindow) return;
+      // Fallback: try with app.getAppPath()
+      const altPath = path.join(app.getAppPath(), 'dist', 'index.html');
+      console.log('Trying alternative path:', altPath);
+      mainWindow.loadFile(altPath).catch((altError) => {
+        console.error('Failed to load from alternative path:', altError);
+        // Show error page
+        if (mainWindow) {
+          mainWindow.loadURL('data:text/html,<h1>Error: Failed to load application</h1><p>Please check the console for details.</p>');
+        }
+      });
+    });
   }
 
   mainWindow.on('closed', () => {
@@ -223,14 +276,26 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  initConfigFiles();
-  createWindow();
+  try {
+    console.log('App is ready, initializing...');
+    console.log('isDev:', isDev);
+    console.log('isPackaged:', app.isPackaged);
+    
+    initConfigFiles();
+    createWindow();
+  } catch (error) {
+    console.error('Error during app initialization:', error);
+    // Still try to create window for debugging
+    createWindow();
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+}).catch((error) => {
+  console.error('Failed to initialize app:', error);
 });
 
 app.on('window-all-closed', () => {
