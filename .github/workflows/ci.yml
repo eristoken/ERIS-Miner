@@ -96,7 +96,6 @@ jobs:
           rm certificate.p12
       
       - name: Configure code signing (if credentials available)
-        if: env.APPLE_CERTIFICATE != '' || env.APPLE_SIGNING_IDENTITY != ''
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -104,10 +103,21 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # forge.config.js reads from environment variables
-          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
-            echo "Code signing will be configured with identity: $APPLE_SIGNING_IDENTITY"
+          # If APPLE_SIGNING_IDENTITY was extracted from certificate in previous step, use it
+          # Otherwise, use the secret value if provided
+          if [ -z "$APPLE_SIGNING_IDENTITY" ] && [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> $GITHUB_ENV
+            export APPLE_SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          fi
+          
+          # Check if we have a signing identity (either from extracted cert or secret)
+          FINAL_IDENTITY="${APPLE_SIGNING_IDENTITY:-${{ secrets.APPLE_SIGNING_IDENTITY }}}"
+          if [ -n "$FINAL_IDENTITY" ]; then
+            echo "Code signing will be configured with identity: $FINAL_IDENTITY"
+            echo "APPLE_SIGNING_IDENTITY=$FINAL_IDENTITY" >> $GITHUB_ENV
           else
-            echo "Warning: APPLE_SIGNING_IDENTITY not set, code signing may not work"
+            echo "No signing identity found - code signing will be skipped"
+            echo "APPLE_SIGNING_IDENTITY=" >> $GITHUB_ENV
           fi
       
       - name: Package for macOS
