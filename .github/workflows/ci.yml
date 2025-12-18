@@ -225,7 +225,8 @@ jobs:
 
   publish-release:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.run_publish_release == true
+    needs: [package-macos, package-windows]
+    if: always() && (github.event_name == 'workflow_dispatch' && inputs.run_publish_release == true)
     
     steps:
       - name: Checkout code
