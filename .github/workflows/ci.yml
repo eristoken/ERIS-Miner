@@ -155,8 +155,8 @@ jobs:
 
   package-windows:
     runs-on: windows-latest
-    needs: build
-    if: always() && (needs.build.result == 'success' || inputs.build_run_id != '') && (github.event_name == 'workflow_dispatch' && inputs.run_package_windows == true)
+    needs: [build, package-macos]
+    if: always() && (needs.package-macos.result == 'success' || needs.build.result == 'success' || inputs.build_run_id != '') && (github.event_name == 'workflow_dispatch' && inputs.run_package_windows == true)
     
     steps:
       - name: Checkout code
