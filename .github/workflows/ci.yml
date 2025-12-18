@@ -141,8 +141,20 @@ jobs:
         if: env.CODE_SIGNING_ENABLED == 'true'
         run: |
           # Verify the app is properly signed
-          APP_PATH=$(find out/make -name "*.app" -type d | head -1)
-          if [ -n "$APP_PATH" ]; then
+          # The .app bundle might be in out/ERIS-Miner-darwin-*/ or we need to extract from DMG
+          APP_PATH=$(find out -name "*.app" -type d -not -path "*/node_modules/*" | head -1)
+          
+          # If not found, try extracting from DMG
+          if [ -z "$APP_PATH" ]; then
+            DMG_PATH=$(find out/make -name "*.dmg" | head -1)
+            if [ -n "$DMG_PATH" ]; then
+              echo "Extracting .app from DMG for verification..."
+              hdiutil attach "$DMG_PATH" -mountpoint /Volumes/ERIS-Miner -quiet -nobrowse || true
+              APP_PATH="/Volumes/ERIS-Miner/ERIS-Miner.app"
+            fi
+          fi
+          
+          if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
             echo "Verifying code signature for: $APP_PATH"
             codesign --verify --deep --strict --verbose=2 "$APP_PATH" || {
               echo "ERROR: Code signature verification failed!"
@@ -176,6 +188,11 @@ jobs:
               fi
             fi
             
+            # Detach DMG if we mounted it
+            if [ -n "$DMG_PATH" ] && [ -d "/Volumes/ERIS-Miner" ]; then
+              hdiutil detach /Volumes/ERIS-Miner -quiet || true
+            fi
+            
             # Also check DMG if it exists
             DMG_PATH=$(find out/make -name "*.dmg" | head -1)
             if [ -n "$DMG_PATH" ]; then
@@ -185,6 +202,8 @@ jobs:
             fi
           else
             echo "Warning: No .app bundle found to verify"
+            echo "Searched in: out/"
+            find out -type d -name "*.app" 2>/dev/null || echo "No .app bundles found"
           fi
       
       - name: Remove quarantine and fix permissions (for unsigned apps)
