@@ -60,7 +60,7 @@
       "packagerConfig": {
         "name": "ERIS-Miner",
         "executableName": "eris-miner",
-        "icon": "./eris_token_app_icon",
+        "icon": "./eris_token_app_icon.png",
         "asar": true
       },
       "makers": [

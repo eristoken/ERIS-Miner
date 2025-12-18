@@ -112,6 +112,13 @@ jobs:
       - name: Package for macOS
         run: npm run make:mac
       
+      - name: Remove quarantine attribute (for unsigned apps)
+        if: env.APPLE_SIGNING_IDENTITY == ''
+        run: |
+          # Remove quarantine attribute so macOS doesn't block unsigned apps
+          find out/make -name "*.app" -exec xattr -cr {} \;
+          find out/make -name "*.dmg" -exec xattr -cr {} \;
+      
       - name: Determine version for artifacts
         id: version
         run: |
