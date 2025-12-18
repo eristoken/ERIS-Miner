@@ -1,6 +1,10 @@
 name: Package Windows
 
 on:
+  workflow_run:
+    workflows: ["Build"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       version:
@@ -12,10 +16,22 @@ on:
 jobs:
   package-windows:
     runs-on: windows-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+      
+      - name: Download build artifacts
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: .
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -24,9 +40,11 @@ jobs:
           cache: 'npm'
       
       - name: Install dependencies
+        if: github.event_name == 'workflow_dispatch'
         run: npm ci
       
       - name: Build application
+        if: github.event_name == 'workflow_dispatch'
         run: npm run build
       
       - name: Import Windows Certificate
