@@ -1,10 +1,6 @@
 name: Package Windows
 
 on:
-  workflow_run:
-    workflows: ["Build"]
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       version:
@@ -12,26 +8,19 @@ on:
         required: false
         type: string
         default: ''
+      build_run_id:
+        description: 'Build workflow run ID (optional - to use build artifacts)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   package-windows:
     runs-on: windows-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
-      
-      - name: Download build artifacts
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-          path: .
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -39,12 +28,34 @@ jobs:
           node-version: '20'
           cache: 'npm'
       
+      - name: Download build artifacts
+        id: download-artifacts
+        if: inputs.build_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.build_run_id }}
+          path: .
+      
+      - name: Check if artifacts downloaded
+        id: check-artifacts
+        shell: pwsh
+        run: |
+          $artifactsFound = (Test-Path "dist") -and (Test-Path "dist-electron")
+          if ($artifactsFound) {
+            Write-Output "artifacts_found=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Output "artifacts_found=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+      
       - name: Install dependencies
-        if: github.event_name == 'workflow_dispatch'
+        if: steps.check-artifacts.outputs.artifacts_found != 'true'
         run: npm ci
       
       - name: Build application
-        if: github.event_name == 'workflow_dispatch'
+        if: steps.check-artifacts.outputs.artifacts_found != 'true'
         run: npm run build
       
       - name: Import Windows Certificate
