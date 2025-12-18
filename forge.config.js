@@ -46,6 +46,10 @@ if (process.env.WINDOWS_CERTIFICATE_FILE) {
 
 // Allow macOS signing config from environment
 if (process.env.APPLE_SIGNING_IDENTITY) {
+  // Only log the certificate name part, not the full identity (which may contain sensitive info)
+  const identityParts = process.env.APPLE_SIGNING_IDENTITY.split('(');
+  const identityName = identityParts[0] || 'Unknown';
+  console.log('Configuring code signing with identity:', `${identityName}(...)`);
   config.packagerConfig.osxSign = {
     identity: process.env.APPLE_SIGNING_IDENTITY,
     hardenedRuntime: true,
@@ -53,13 +57,21 @@ if (process.env.APPLE_SIGNING_IDENTITY) {
     entitlementsInherit: 'entitlements.plist',
   };
   if (process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID) {
+    console.log('Configuring notarization (credentials hidden)');
     config.packagerConfig.osxNotarize = {
       tool: 'notarytool',
       appleId: process.env.APPLE_ID,
       appleIdPassword: process.env.APPLE_ID_PASSWORD,
       teamId: process.env.APPLE_TEAM_ID,
     };
+  } else {
+    console.warn('Notarization not configured - missing credentials:');
+    console.warn('  APPLE_ID:', process.env.APPLE_ID ? 'set' : 'NOT SET');
+    console.warn('  APPLE_ID_PASSWORD:', process.env.APPLE_ID_PASSWORD ? 'set' : 'NOT SET');
+    console.warn('  APPLE_TEAM_ID:', process.env.APPLE_TEAM_ID ? 'set' : 'NOT SET');
   }
+} else {
+  console.log('Code signing not configured - APPLE_SIGNING_IDENTITY not set');
 }
 
 module.exports = config;

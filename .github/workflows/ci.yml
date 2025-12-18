@@ -114,10 +114,13 @@ jobs:
           # Prefer extracted identity from certificate, fall back to secret
           if [ -n "$EXTRACTED_IDENTITY" ]; then
             FINAL_IDENTITY="$EXTRACTED_IDENTITY"
-            echo "Using signing identity extracted from certificate: $FINAL_IDENTITY"
+            # Only show certificate name part, not full identity with team ID
+            IDENTITY_SHORT=$(echo "$FINAL_IDENTITY" | cut -d'(' -f1)
+            echo "Using signing identity extracted from certificate: ${IDENTITY_SHORT}(...)"
           elif [ -n "$SECRET_IDENTITY" ]; then
             FINAL_IDENTITY="$SECRET_IDENTITY"
-            echo "Using signing identity from secret: $FINAL_IDENTITY"
+            IDENTITY_SHORT=$(echo "$FINAL_IDENTITY" | cut -d'(' -f1)
+            echo "Using signing identity from secret: ${IDENTITY_SHORT}(...)"
             echo "APPLE_SIGNING_IDENTITY=$FINAL_IDENTITY" >> $GITHUB_ENV
           else
             FINAL_IDENTITY=""
@@ -126,7 +129,8 @@ jobs:
           
           # Ensure it's set in GITHUB_ENV for forge.config.js (if we have one)
           if [ -n "$FINAL_IDENTITY" ]; then
-            echo "Code signing will be configured with identity: $FINAL_IDENTITY"
+            IDENTITY_SHORT=$(echo "$FINAL_IDENTITY" | cut -d'(' -f1)
+            echo "Code signing will be configured with identity: ${IDENTITY_SHORT}(...)"
             echo "APPLE_SIGNING_IDENTITY=$FINAL_IDENTITY" >> $GITHUB_ENV
             echo "CODE_SIGNING_ENABLED=true" >> $GITHUB_ENV
           else
@@ -135,10 +139,84 @@ jobs:
           fi
       
       - name: Package for macOS
-        run: npm run make:mac
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Debug: Check if notarization env vars are set
+          echo "=== Checking notarization configuration ==="
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            # Only show first part of signing identity (certificate name), not full details
+            SIGNING_IDENTITY_SHORT=$(echo "$APPLE_SIGNING_IDENTITY" | cut -d'(' -f1)
+            echo "✓ Signing identity: ${SIGNING_IDENTITY_SHORT}(...)"
+          else
+            echo "✗ Signing identity not set"
+          fi
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_ID_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "✓ Notarization credentials configured"
+            echo "  Apple ID: ${APPLE_ID:+set (hidden)}${APPLE_ID:-not set}"
+            echo "  Team ID: ${APPLE_TEAM_ID:+set (hidden)}${APPLE_TEAM_ID:-not set}"
+            echo "  APPLE_ID_PASSWORD: ${APPLE_ID_PASSWORD:+set (hidden)}${APPLE_ID_PASSWORD:-not set}"
+          else
+            echo "⚠ Notarization credentials missing:"
+            echo "  APPLE_ID: ${APPLE_ID:+set}${APPLE_ID:-not set}"
+            echo "  APPLE_ID_PASSWORD: ${APPLE_ID_PASSWORD:+set}${APPLE_ID_PASSWORD:-not set}"
+            echo "  APPLE_TEAM_ID: ${APPLE_TEAM_ID:+set}${APPLE_TEAM_ID:-not set}"
+          fi
+          
+          # Verify forge.config.js can read the environment variables
+          echo ""
+          echo "=== Verifying forge.config.js can read environment variables ==="
+          node -e "
+            const config = require('./forge.config.js');
+            console.log('forge.config.js loaded successfully');
+            if (process.env.APPLE_SIGNING_IDENTITY) {
+              console.log('✓ APPLE_SIGNING_IDENTITY is available to Node.js');
+            } else {
+              console.log('✗ APPLE_SIGNING_IDENTITY NOT available to Node.js');
+            }
+            if (process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID) {
+              console.log('✓ Notarization env vars are available to Node.js');
+            } else {
+              console.log('✗ Notarization env vars NOT all available to Node.js');
+              console.log('  APPLE_ID:', process.env.APPLE_ID ? 'set' : 'NOT SET');
+              console.log('  APPLE_ID_PASSWORD:', process.env.APPLE_ID_PASSWORD ? 'set' : 'NOT SET');
+              console.log('  APPLE_TEAM_ID:', process.env.APPLE_TEAM_ID ? 'set' : 'NOT SET');
+            }
+          " || echo "⚠ Could not verify forge.config.js (this is okay, continuing)"
+          
+          # Run make with verbose output to capture notarization logs
+          npm run make:mac 2>&1 | tee make-output.log || {
+            echo "⚠ Make command exited with error, but continuing to check status..."
+            cat make-output.log || true
+          }
+          
+          # Check if notarization was mentioned in the output
+          echo ""
+          echo "=== Checking for notarization submission in logs ==="
+          if grep -i "notariz" make-output.log 2>/dev/null; then
+            echo "✓ Found notarization-related output in logs"
+          else
+            echo "⚠ No notarization output found - notarization may not have been triggered"
+            echo "This could mean:"
+            echo "  1. Environment variables not passed correctly to Electron Forge"
+            echo "  2. Notarization configuration not recognized"
+            echo "  3. Notarization failed silently"
+          fi
+          
+          # Show last 50 lines of output for debugging
+          echo ""
+          echo "=== Last 50 lines of make output ==="
+          tail -50 make-output.log || true
       
       - name: Verify code signing and notarization (if enabled)
         if: env.CODE_SIGNING_ENABLED == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # Verify the app is properly signed
           # The .app bundle might be in out/ERIS-Miner-darwin-*/ or we need to extract from DMG
@@ -174,15 +252,86 @@ jobs:
               echo "✓ App is notarized and stapled - no malware warning should appear"
             else
               echo "⚠ App is signed but notarization ticket not stapled yet"
+              
+              # Check notarization status using notarytool if credentials are available
+              if [ -n "$APPLE_ID" ] && [ -n "$APPLE_ID_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+                echo "Checking notarization submission status..."
+                # Get the app's bundle ID for notarization lookup
+                BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "")
+                if [ -n "$BUNDLE_ID" ]; then
+                  echo "Bundle ID: $BUNDLE_ID"
+                fi
+                
+                # Check recent notarization history to see if submission happened
+                echo ""
+                echo "=== Recent notarization submissions ==="
+                xcrun notarytool history --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1 | head -30 || {
+                  echo "⚠ Could not retrieve notarization history"
+                  echo "This might indicate:"
+                  echo "  - Invalid credentials"
+                  echo "  - No submissions yet"
+                  echo "  - Network/API issue"
+                }
+                
+                # Try to get the most recent submission ID and check its status
+                echo ""
+                echo "=== Checking most recent submission status ==="
+                SUBMISSION_ID=$(xcrun notarytool history --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>/dev/null | grep -E "^[a-f0-9-]+" | head -1 | awk '{print $1}' || echo "")
+                if [ -n "$SUBMISSION_ID" ]; then
+                  echo "Most recent submission ID: $SUBMISSION_ID"
+                  xcrun notarytool info "$SUBMISSION_ID" --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1 || echo "Could not get submission info"
+                else
+                  echo "No submission ID found - notarization may not have been submitted"
+                fi
+              fi
+              
+              echo ""
               echo "Attempting to staple notarization ticket..."
+              
+              # Try to wait for notarization if we have a submission ID
+              if [ -n "$SUBMISSION_ID" ]; then
+                echo "Waiting for notarization to complete (this can take 5-15 minutes)..."
+                MAX_WAIT=900  # 15 minutes
+                WAIT_INTERVAL=30  # Check every 30 seconds
+                ELAPSED=0
+                
+                while [ $ELAPSED -lt $MAX_WAIT ]; do
+                  STATUS=$(xcrun notarytool info "$SUBMISSION_ID" --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1 | grep -i "status:" | head -1 || echo "")
+                  echo "[$ELAPSED seconds] Status: $STATUS"
+                  
+                  if echo "$STATUS" | grep -qi "Accepted\|success"; then
+                    echo "✓ Notarization completed successfully!"
+                    break
+                  elif echo "$STATUS" | grep -qi "Invalid\|Failed\|Rejected"; then
+                    echo "✗ Notarization failed or was rejected"
+                    xcrun notarytool log "$SUBMISSION_ID" --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1 | head -50 || true
+                    break
+                  fi
+                  
+                  sleep $WAIT_INTERVAL
+                  ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+                done
+              fi
               
               # Try to staple - this will work if notarization completed
               if stapler staple "$APP_PATH" 2>/dev/null; then
                 echo "✓ Successfully stapled notarization ticket"
                 stapler validate "$APP_PATH" && echo "✓ App is now notarized and stapled"
               else
-                echo "⚠ Could not staple - notarization may still be in progress"
-                echo "Note: Notarization can take 5-15 minutes. The app will work but may show warnings until notarization completes."
+                echo "⚠ Could not staple - notarization may still be in progress or failed"
+                echo ""
+                echo "Troubleshooting:"
+                echo "1. Check if notarization was submitted during packaging (look for 'notarytool' output above)"
+                echo "2. Notarization can take 5-15 minutes to complete"
+                echo "3. Check Apple Developer portal for notarization status"
+                echo "4. Verify APPLE_ID, APPLE_ID_PASSWORD, and APPLE_TEAM_ID secrets are correct"
+                echo ""
+                if [ -n "$SUBMISSION_ID" ]; then
+                  echo "Submission ID: $SUBMISSION_ID"
+                  echo "Check status with:"
+                  echo "  xcrun notarytool info $SUBMISSION_ID --apple-id \"$APPLE_ID\" --password \"...\" --team-id \"$APPLE_TEAM_ID\""
+                fi
+                echo ""
                 echo "After notarization completes, you can manually staple:"
                 echo "  stapler staple \"$APP_PATH\""
               fi
