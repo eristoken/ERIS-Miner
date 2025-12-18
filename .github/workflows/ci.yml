@@ -82,27 +82,14 @@ jobs:
       
       - name: Configure code signing (if credentials available)
         if: env.APPLE_SIGNING_IDENTITY != ''
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # Create a temporary package.json with signing config
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.config.forge.packagerConfig.osxSign = {
-              identity: process.env.APPLE_SIGNING_IDENTITY,
-              hardenedRuntime: true,
-              entitlements: 'entitlements.plist',
-              entitlementsInherit: 'entitlements.plist'
-            };
-            if (process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID) {
-              pkg.config.forge.packagerConfig.osxNotarize = {
-                tool: 'notarytool',
-                appleId: process.env.APPLE_ID,
-                appleIdPassword: process.env.APPLE_ID_PASSWORD,
-                teamId: process.env.APPLE_TEAM_ID
-              };
-            }
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-          "
+          # forge.config.js reads from environment variables, no modification needed
+          echo "Code signing will be configured via environment variables"
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -118,7 +105,6 @@ jobs:
           # Remove quarantine attribute so macOS doesn't block unsigned apps
           find out/make -name "*.app" -exec xattr -cr {} \;
           find out/make -name "*.dmg" -exec xattr -cr {} \;
-          find out/make -name "*.zip" -exec xattr -cr {} \;
           
           # Also remove quarantine from DMG contents
           for dmg in out/make/*.dmg; do
@@ -139,14 +125,6 @@ jobs:
         with:
           name: eris-miner-macos-dmg-${{ steps.version.outputs.version }}
           path: out/make/*.dmg
-          retention-days: 30
-      
-      - name: Upload ZIP artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: eris-miner-macos-zip-${{ steps.version.outputs.version }}
-          path: out/make/**/*.zip
-          if-no-files-found: warn
           retention-days: 30
 
   package-windows:
@@ -185,19 +163,11 @@ jobs:
           $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
           $certPath = "$env:TEMP\certificate.pfx"
           [System.IO.File]::WriteAllBytes($certPath, $certBytes)
-          $env:WINDOWS_CERTIFICATE_FILE = $certPath
           
-          # Update package.json to add certificate config
-          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
-          $packageJson.config.forge.makers | Where-Object { $_.name -eq '@electron-forge/maker-wix' } | ForEach-Object {
-            $_.config.certificateFile = $env:WINDOWS_CERTIFICATE_FILE
-            $_.config.certificatePassword = $env:WINDOWS_CERTIFICATE_PASSWORD
-          }
-          $packageJson.config.forge.makers | Where-Object { $_.name -eq '@electron-forge/maker-squirrel' } | ForEach-Object {
-            $_.config.certificateFile = $env:WINDOWS_CERTIFICATE_FILE
-            $_.config.certificatePassword = $env:WINDOWS_CERTIFICATE_PASSWORD
-          }
-          $packageJson | ConvertTo-Json -Depth 10 | Set-Content package.json
+          # Set environment variables for certificate config
+          # forge.config.js reads from environment variables
+          echo "WINDOWS_CERTIFICATE_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "WINDOWS_CERTIFICATE_PASSWORD=$env:WINDOWS_CERTIFICATE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Append
       
       - name: Package for Windows
         run: npm run make:win
@@ -220,14 +190,6 @@ jobs:
         with:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
           path: out/make/**/*.msi
-          if-no-files-found: warn
-          retention-days: 30
-      
-      - name: Upload EXE artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: eris-miner-windows-exe-${{ steps.version.outputs.version }}
-          path: out/make/**/*.exe
           if-no-files-found: warn
           retention-days: 30
 
@@ -254,24 +216,10 @@ jobs:
           path: ./artifacts/macos
           continue-on-error: true
       
-      - name: Download macOS ZIP artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: eris-miner-macos-zip-${{ steps.version.outputs.version }}
-          path: ./artifacts/macos
-          continue-on-error: true
-      
       - name: Download Windows MSI artifact
         uses: actions/download-artifact@v4
         with:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
-          path: ./artifacts/windows
-          continue-on-error: true
-      
-      - name: Download Windows EXE artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: eris-miner-windows-exe-${{ steps.version.outputs.version }}
           path: ./artifacts/windows
           continue-on-error: true
       
@@ -294,13 +242,11 @@ jobs:
             Automated release from commit ${{ github.sha }}
             
             ### Downloads
-            - **macOS**: Download the DMG or ZIP file below
-            - **Windows**: Download the MSI or EXE file below
+            - **macOS**: Download the DMG file below
+            - **Windows**: Download the MSI file below
           files: |
             ./artifacts/macos/*.dmg
-            ./artifacts/macos/**/*.zip
             ./artifacts/windows/**/*.msi
-            ./artifacts/windows/**/*.exe
           draft: false
           prerelease: false
         env:
