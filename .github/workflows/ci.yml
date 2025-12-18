@@ -298,9 +298,9 @@ jobs:
             - **Windows**: Download the MSI or EXE file below
           files: |
             ./artifacts/macos/*.dmg
-            ./artifacts/macos/*.zip
-            ./artifacts/windows/*.msi
-            ./artifacts/windows/*.exe
+            ./artifacts/macos/**/*.zip
+            ./artifacts/windows/**/*.msi
+            ./artifacts/windows/**/*.exe
           draft: false
           prerelease: false
         env:
