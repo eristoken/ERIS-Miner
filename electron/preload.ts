@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readRpcs: () => ipcRenderer.invoke('read-rpcs'),
   writeRpcs: (rpcs: any) => ipcRenderer.invoke('write-rpcs', rpcs),
   readContracts: () => ipcRenderer.invoke('read-contracts'),
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
 });
 

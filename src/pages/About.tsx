@@ -5,6 +5,7 @@ import {
   Box,
   Grid,
   Divider,
+  Button,
 } from '@mui/material';
 
 // Vite will inject these at build time from package.json
@@ -68,7 +69,7 @@ function About() {
 
             <Divider sx={{ my: 2 }} />
 
-            <Box>
+            <Box sx={{ mb: 3 }}>
               <Typography variant="h6" gutterBottom>
                 About
               </Typography>
@@ -81,6 +82,44 @@ function About() {
                 This application is designed to provide a user-friendly interface for mining ERC-918
                 tokens while maintaining full control over mining parameters and blockchain interactions.
               </Typography>
+            </Box>
+
+            <Divider sx={{ my: 2 }} />
+
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                Links
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Button
+                  variant="text"
+                  onClick={() => window.electronAPI.openExternal('https://eristoken.com/')}
+                  sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                >
+                  Website
+                </Button>
+                <Button
+                  variant="text"
+                  onClick={() => window.electronAPI.openExternal('https://github.com/eristoken')}
+                  sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                >
+                  GitHub
+                </Button>
+                <Button
+                  variant="text"
+                  onClick={() => window.electronAPI.openExternal('https://x.com/eris_token')}
+                  sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                >
+                  X (Twitter)
+                </Button>
+                <Button
+                  variant="text"
+                  onClick={() => window.electronAPI.openExternal('https://bsky.app/profile/eristoken.bsky.social')}
+                  sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                >
+                  Bluesky
+                </Button>
+              </Box>
             </Box>
           </CardContent>
         </Card>

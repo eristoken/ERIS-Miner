@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -526,6 +526,16 @@ ipcMain.handle('read-contracts', () => {
     console.error(`Failed to read contracts: ${error.message}`);
     console.error(`Contracts file path: ${CONTRACTS_FILE}`);
     return null;
+  }
+});
+
+ipcMain.handle('open-external', (_event: Electron.IpcMainInvokeEvent, url: string) => {
+  try {
+    shell.openExternal(url);
+    return true;
+  } catch (error: any) {
+    console.error(`Failed to open external URL: ${error.message}`);
+    return false;
   }
 });
 
