@@ -1,6 +1,10 @@
 name: Package Windows
 
 on:
+  workflow_run:
+    workflows: ["Package macOS"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       version:
@@ -17,6 +21,7 @@ on:
 jobs:
   package-windows:
     runs-on: windows-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     
     steps:
       - name: Checkout code
@@ -28,15 +33,27 @@ jobs:
           node-version: '20'
           cache: 'npm'
       
+      - name: Get build run ID
+        id: get-build-run-id
+        if: github.event_name == 'workflow_run' && inputs.build_run_id == ''
+        run: |
+          # Get the workflow run that triggered package-macos, then get its build run ID
+          # The package-macos workflow was triggered by Build, so we need to find that Build run
+          # We'll use the head_sha to find the matching Build run
+          BUILD_RUN_ID=$(gh run list --workflow=Build --branch=${{ github.event.workflow_run.head_branch }} --status=success --limit=1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")
+          echo "build_run_id=$BUILD_RUN_ID" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Download build artifacts
         id: download-artifacts
-        if: inputs.build_run_id != ''
+        if: inputs.build_run_id != '' || github.event_name == 'workflow_run'
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.build_run_id }}
+          run-id: ${{ inputs.build_run_id || steps.get-build-run-id.outputs.build_run_id }}
           path: .
       
       - name: Check if artifacts downloaded
@@ -76,17 +93,31 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: npm run make:win
       
+      - name: Determine version for artifacts
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ inputs.version }}") {
+            Write-Output "version=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } elseif ("${{ github.event_name }}" -eq "workflow_run") {
+            $sha = "${{ github.event.workflow_run.head_sha }}"
+            Write-Output "version=$($sha.Substring(0, 7))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            $sha = "${{ github.sha }}"
+            Write-Output "version=$($sha.Substring(0, 7))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+      
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eris-miner-windows-msi-${{ inputs.version || github.sha }}
+          name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
           path: out/make/*.msi
           retention-days: 30
       
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eris-miner-windows-exe-${{ inputs.version || github.sha }}
+          name: eris-miner-windows-exe-${{ steps.version.outputs.version }}
           path: out/make/*.exe
           retention-days: 30
 

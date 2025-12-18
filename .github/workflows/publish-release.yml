@@ -1,6 +1,10 @@
 name: Publish Release
 
 on:
+  workflow_run:
+    workflows: ["Package Windows"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       version:
@@ -17,6 +21,7 @@ on:
 jobs:
   publish-release:
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     
     steps:
       - name: Checkout code
@@ -29,14 +34,38 @@ jobs:
         run: |
           if [ -n "${{ inputs.version }}" ]; then
             echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # Use short SHA from the triggering workflow
+            echo "version=${{ github.event.workflow_run.head_sha }}" | cut -c1-7 >> $GITHUB_OUTPUT
           else
             echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
           fi
+      
+      - name: Get package workflow run IDs
+        id: get-package-runs
+        if: github.event_name == 'workflow_run'
+        run: |
+          # Get the package-windows run ID (current triggering workflow)
+          PACKAGE_WINDOWS_RUN_ID="${{ github.event.workflow_run.id }}"
+          echo "package_windows_run_id=$PACKAGE_WINDOWS_RUN_ID" >> $GITHUB_OUTPUT
+          
+          # Get the package-macos run ID that triggered package-windows
+          # Find the package-macos run with the same head_sha
+          PACKAGE_MACOS_RUN_ID=$(gh run list --workflow="Package macOS" --branch="${{ github.event.workflow_run.head_branch }}" --status=success --json databaseId,headSha --jq '.[] | select(.headSha == "${{ github.event.workflow_run.head_sha }}") | .databaseId' 2>/dev/null | head -1 || echo "")
+          # Fallback: get most recent successful package-macos run on same branch
+          if [ -z "$PACKAGE_MACOS_RUN_ID" ]; then
+            PACKAGE_MACOS_RUN_ID=$(gh run list --workflow="Package macOS" --branch="${{ github.event.workflow_run.head_branch }}" --status=success --limit=1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")
+          fi
+          echo "package_macos_run_id=$PACKAGE_MACOS_RUN_ID" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Download macOS DMG artifact
         uses: actions/download-artifact@v4
         with:
           name: eris-miner-macos-dmg-${{ steps.version.outputs.version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-package-runs.outputs.package_macos_run_id || github.run_id }}
           path: ./artifacts/macos
           continue-on-error: true
       
@@ -44,6 +73,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: eris-miner-macos-zip-${{ steps.version.outputs.version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-package-runs.outputs.package_macos_run_id || github.run_id }}
           path: ./artifacts/macos
           continue-on-error: true
       
@@ -51,6 +82,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-package-runs.outputs.package_windows_run_id || github.run_id }}
           path: ./artifacts/windows
           continue-on-error: true
       
@@ -58,6 +91,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: eris-miner-windows-exe-${{ steps.version.outputs.version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-package-runs.outputs.package_windows_run_id || github.run_id }}
           path: ./artifacts/windows
           continue-on-error: true
       

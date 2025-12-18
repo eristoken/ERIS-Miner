@@ -1,6 +1,10 @@
 name: Package macOS
 
 on:
+  workflow_run:
+    workflows: ["Build"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       version:
@@ -17,6 +21,7 @@ on:
 jobs:
   package-macos:
     runs-on: macos-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     
     steps:
       - name: Checkout code
@@ -30,13 +35,13 @@ jobs:
       
       - name: Download build artifacts
         id: download-artifacts
-        if: inputs.build_run_id != ''
+        if: inputs.build_run_id != '' || github.event_name == 'workflow_run'
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.build_run_id }}
+          run-id: ${{ inputs.build_run_id || github.event.workflow_run.id }}
           path: .
       
       - name: Check if artifacts downloaded
@@ -78,17 +83,28 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run make:mac
       
+      - name: Determine version for artifacts
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
+            echo "version=${{ github.event.workflow_run.head_sha }}" | cut -c1-7 >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          fi
+      
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eris-miner-macos-dmg-${{ inputs.version || github.sha }}
+          name: eris-miner-macos-dmg-${{ steps.version.outputs.version }}
           path: out/make/*.dmg
           retention-days: 30
       
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eris-miner-macos-zip-${{ inputs.version || github.sha }}
+          name: eris-miner-macos-zip-${{ steps.version.outputs.version }}
           path: out/make/*.zip
           retention-days: 30
 
