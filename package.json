@@ -92,7 +92,7 @@
           "config": {
             "name": "ERIS-Miner",
             "authors": "ERIS Token",
-            "iconUrl": "./eris_token_app_icon.ico"
+            "setupIcon": "./eris_token_app_icon.ico"
           }
         }
       ],
