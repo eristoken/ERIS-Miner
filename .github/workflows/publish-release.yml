@@ -1,9 +1,6 @@
 name: Publish Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -25,15 +22,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.version || github.ref }}
+          ref: ${{ inputs.version || 'HEAD' }}
       
       - name: Determine version
         id: version
         run: |
           if [ -n "${{ inputs.version }}" ]; then
             echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
             echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
           fi

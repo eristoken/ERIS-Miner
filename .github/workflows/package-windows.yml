@@ -1,11 +1,6 @@
 name: Package Windows
 
 on:
-  push:
-    branches:
-      - main
-      - master
-      - develop
   workflow_dispatch:
     inputs:
       version:
