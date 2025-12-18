@@ -209,18 +209,26 @@ jobs:
           $sha = "${{ github.sha }}"
           Write-Output "version=$($sha.Substring(0, 7))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
       
+      - name: List output directory structure
+        shell: pwsh
+        run: |
+          Write-Host "Contents of out/make:"
+          Get-ChildItem -Path out/make -Recurse | Format-Table -AutoSize
+      
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
         with:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
-          path: out/make/*.msi
+          path: out/make/**/*.msi
+          if-no-files-found: warn
           retention-days: 30
       
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: eris-miner-windows-exe-${{ steps.version.outputs.version }}
-          path: out/make/*.exe
+          path: out/make/**/*.exe
+          if-no-files-found: warn
           retention-days: 30
 
   publish-release:
