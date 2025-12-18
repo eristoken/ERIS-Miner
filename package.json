@@ -80,7 +80,7 @@
           "config": {
             "name": "ERIS-Miner",
             "description": "ERC-918 Token Miner",
-            "icon": "./eris_token_app_icon.png",
+            "icon": "./eris_token_app_icon.ico",
             "ui": {
               "chooseDirectory": true
             },
@@ -92,6 +92,7 @@
           "name": "@electron-forge/maker-squirrel",
           "config": {
             "name": "ERIS-Miner",
+            "iconUrl": "./eris_token_app_icon.ico",
             "certificateFile": "@env:WINDOWS_CERTIFICATE_FILE",
             "certificatePassword": "@env:WINDOWS_CERTIFICATE_PASSWORD"
           }
