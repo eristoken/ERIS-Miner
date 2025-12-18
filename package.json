@@ -84,18 +84,15 @@
             "icon": "./eris_token_app_icon.ico",
             "ui": {
               "chooseDirectory": true
-            },
-            "certificateFile": "@env:WINDOWS_CERTIFICATE_FILE",
-            "certificatePassword": "@env:WINDOWS_CERTIFICATE_PASSWORD"
+            }
           }
         },
         {
           "name": "@electron-forge/maker-squirrel",
           "config": {
             "name": "ERIS-Miner",
-            "iconUrl": "./eris_token_app_icon.ico",
-            "certificateFile": "@env:WINDOWS_CERTIFICATE_FILE",
-            "certificatePassword": "@env:WINDOWS_CERTIFICATE_PASSWORD"
+            "authors": "ERIS Token",
+            "iconUrl": "./eris_token_app_icon.ico"
           }
         }
       ],

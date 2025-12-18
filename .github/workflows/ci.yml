@@ -175,7 +175,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Import Windows Certificate
+      - name: Configure Windows code signing (if certificate available)
         if: env.WINDOWS_CERTIFICATE != ''
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -186,11 +186,20 @@ jobs:
           $certPath = "$env:TEMP\certificate.pfx"
           [System.IO.File]::WriteAllBytes($certPath, $certBytes)
           $env:WINDOWS_CERTIFICATE_FILE = $certPath
+          
+          # Update package.json to add certificate config
+          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
+          $packageJson.config.forge.makers | Where-Object { $_.name -eq '@electron-forge/maker-wix' } | ForEach-Object {
+            $_.config.certificateFile = $env:WINDOWS_CERTIFICATE_FILE
+            $_.config.certificatePassword = $env:WINDOWS_CERTIFICATE_PASSWORD
+          }
+          $packageJson.config.forge.makers | Where-Object { $_.name -eq '@electron-forge/maker-squirrel' } | ForEach-Object {
+            $_.config.certificateFile = $env:WINDOWS_CERTIFICATE_FILE
+            $_.config.certificatePassword = $env:WINDOWS_CERTIFICATE_PASSWORD
+          }
+          $packageJson | ConvertTo-Json -Depth 10 | Set-Content package.json
       
       - name: Package for Windows
-        env:
-          WINDOWS_CERTIFICATE_FILE: ${{ env.WINDOWS_CERTIFICATE_FILE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: npm run make:win
       
       - name: Determine version for artifacts
