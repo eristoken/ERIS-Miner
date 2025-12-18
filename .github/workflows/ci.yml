@@ -87,12 +87,36 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$APPLE_CERTIFICATE_PASSWORD" build.keychain
           rm certificate.p12
       
-      - name: Package for macOS
+      - name: Configure code signing (if credentials available)
+        if: env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          # Create a temporary package.json with signing config
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.config.forge.packagerConfig.osxSign = {
+              identity: process.env.APPLE_SIGNING_IDENTITY,
+              hardenedRuntime: true,
+              entitlements: 'entitlements.plist',
+              entitlementsInherit: 'entitlements.plist'
+            };
+            if (process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID) {
+              pkg.config.forge.packagerConfig.osxNotarize = {
+                tool: 'notarytool',
+                appleId: process.env.APPLE_ID,
+                appleIdPassword: process.env.APPLE_ID_PASSWORD,
+                teamId: process.env.APPLE_TEAM_ID
+              };
+            }
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      
+      - name: Package for macOS
         run: npm run make:mac
       
       - name: Determine version for artifacts
