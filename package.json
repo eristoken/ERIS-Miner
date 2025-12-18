@@ -36,6 +36,7 @@
   "devDependencies": {
     "@electron-forge/cli": "^7.5.0",
     "@electron-forge/maker-dmg": "^7.5.0",
+    "@electron-forge/maker-zip": "^7.5.0",
     "@electron-forge/maker-squirrel": "^7.5.0",
     "@electron-forge/maker-wix": "^7.5.0",
     "@electron-forge/plugin-auto-unpack-natives": "^7.5.0",
@@ -82,6 +83,10 @@
           }
         },
         {
+          "name": "@electron-forge/maker-zip",
+          "platforms": ["darwin"]
+        },
+        {
           "name": "@electron-forge/maker-wix",
           "config": {
             "name": "ERIS-Miner",
@@ -90,6 +95,14 @@
             "ui": {
               "chooseDirectory": true
             },
+            "certificateFile": "@env:WINDOWS_CERTIFICATE_FILE",
+            "certificatePassword": "@env:WINDOWS_CERTIFICATE_PASSWORD"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "ERIS-Miner",
             "certificateFile": "@env:WINDOWS_CERTIFICATE_FILE",
             "certificatePassword": "@env:WINDOWS_CERTIFICATE_PASSWORD"
           }

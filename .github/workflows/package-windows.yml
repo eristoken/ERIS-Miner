@@ -1,0 +1,92 @@
+name: Package Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: false
+        type: string
+        default: ''
+      build_run_id:
+        description: 'Build workflow run ID (optional - to use build artifacts)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Download build artifacts
+        id: download-artifacts
+        if: inputs.build_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.build_run_id }}
+          path: .
+      
+      - name: Check if artifacts downloaded
+        id: check-artifacts
+        shell: pwsh
+        run: |
+          $artifactsFound = (Test-Path "dist") -and (Test-Path "dist-electron")
+          if ($artifactsFound) {
+            Write-Output "artifacts_found=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Output "artifacts_found=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+      
+      - name: Install dependencies
+        if: steps.check-artifacts.outputs.artifacts_found != 'true'
+        run: npm ci
+      
+      - name: Build application
+        if: steps.check-artifacts.outputs.artifacts_found != 'true'
+        run: npm run build
+      
+      - name: Import Windows Certificate
+        if: env.WINDOWS_CERTIFICATE != ''
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          $certPath = "$env:TEMP\certificate.pfx"
+          [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+          $env:WINDOWS_CERTIFICATE_FILE = $certPath
+      
+      - name: Package for Windows
+        env:
+          WINDOWS_CERTIFICATE_FILE: ${{ env.WINDOWS_CERTIFICATE_FILE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: npm run make:win
+      
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eris-miner-windows-msi-${{ inputs.version || github.sha }}
+          path: out/make/*.msi
+          retention-days: 30
+      
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eris-miner-windows-exe-${{ inputs.version || github.sha }}
+          path: out/make/*.exe
+          retention-days: 30
+

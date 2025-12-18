@@ -1,0 +1,86 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: false
+        type: string
+        default: ''
+      release_notes:
+        description: 'Release notes'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || 'HEAD' }}
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Download macOS DMG artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: eris-miner-macos-dmg-${{ steps.version.outputs.version }}
+          path: ./artifacts/macos
+          continue-on-error: true
+      
+      - name: Download macOS ZIP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: eris-miner-macos-zip-${{ steps.version.outputs.version }}
+          path: ./artifacts/macos
+          continue-on-error: true
+      
+      - name: Download Windows MSI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
+          path: ./artifacts/windows
+          continue-on-error: true
+      
+      - name: Download Windows EXE artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: eris-miner-windows-exe-${{ steps.version.outputs.version }}
+          path: ./artifacts/windows
+          continue-on-error: true
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body: |
+            ## ERIS Miner ${{ steps.version.outputs.version }}
+            
+            ${{ inputs.release_notes || 'Automated release from commit' }}
+            
+            ### Downloads
+            - **macOS**: Download the DMG or ZIP file below
+            - **Windows**: Download the MSI or EXE file below
+          files: |
+            ./artifacts/macos/*.dmg
+            ./artifacts/macos/*.zip
+            ./artifacts/windows/*.msi
+            ./artifacts/windows/*.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
