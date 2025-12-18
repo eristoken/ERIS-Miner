@@ -1,5 +1,3 @@
-const wixHook = require('./electron-forge-wix-hook.js');
-
 // Base configuration
 const config = {
   packagerConfig: {
@@ -26,7 +24,6 @@ const config = {
         ui: {
           chooseDirectory: true,
         },
-        beforeCreate: wixHook,
       },
     },
   ],
