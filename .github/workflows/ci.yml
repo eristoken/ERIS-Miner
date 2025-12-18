@@ -78,18 +78,37 @@ jobs:
           security unlock-keychain -p "$APPLE_CERTIFICATE_PASSWORD" build.keychain
           security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$APPLE_CERTIFICATE_PASSWORD" build.keychain
+          
+          # Extract signing identity from the certificate
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -n "$SIGNING_IDENTITY" ]; then
+            echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> $GITHUB_ENV
+            echo "Found signing identity: $SIGNING_IDENTITY"
+          else
+            # Try to get any codesigning identity
+            SIGNING_IDENTITY=$(security find-identity -v -p codesigning build.keychain | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+            if [ -n "$SIGNING_IDENTITY" ]; then
+              echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> $GITHUB_ENV
+              echo "Found signing identity: $SIGNING_IDENTITY"
+            fi
+          fi
+          
           rm certificate.p12
       
       - name: Configure code signing (if credentials available)
-        if: env.APPLE_SIGNING_IDENTITY != ''
+        if: env.APPLE_CERTIFICATE != '' || env.APPLE_SIGNING_IDENTITY != ''
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # forge.config.js reads from environment variables, no modification needed
-          echo "Code signing will be configured via environment variables"
+          # forge.config.js reads from environment variables
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "Code signing will be configured with identity: $APPLE_SIGNING_IDENTITY"
+          else
+            echo "Warning: APPLE_SIGNING_IDENTITY not set, code signing may not work"
+          fi
       
       - name: Package for macOS
         run: npm run make:mac
