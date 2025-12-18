@@ -6,29 +6,65 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 
-// Use project root directory for config files
-// __dirname points to dist-electron in production, or electron/ in dev (after compilation)
-// We need to go up to the project root
-const PROJECT_ROOT = path.join(__dirname, '..');
-const SETTINGS_FILE = path.join(PROJECT_ROOT, 'settings.json');
-const CHAINS_FILE = path.join(PROJECT_ROOT, 'chains.json');
-const RPCS_FILE = path.join(PROJECT_ROOT, 'rpcs.json');
-const CONTRACTS_FILE = path.join(PROJECT_ROOT, 'contracts.json');
-const APP_ICON = path.join(PROJECT_ROOT, 'eris_token_app_icon.png');
+// Get config file directory
+// In development: use project root (next to dist-electron)
+// In production: use user data directory (writable location outside asar)
+function getConfigDir(): string {
+  if (app.isPackaged) {
+    // In packaged app, use user data directory (writable)
+    return app.getPath('userData');
+  } else {
+    // In development, use project root
+    return path.join(__dirname, '..');
+  }
+}
 
-// Log file paths for debugging
-console.log('Project root:', PROJECT_ROOT);
-console.log('Settings file:', SETTINGS_FILE);
-console.log('Chains file:', CHAINS_FILE);
-console.log('RPCs file:', RPCS_FILE);
+// Initialize config file paths (will be set after app is ready)
+let CONFIG_DIR = '';
+let SETTINGS_FILE = '';
+let CHAINS_FILE = '';
+let RPCS_FILE = '';
+let CONTRACTS_FILE = '';
+let APP_ICON = '';
 
-// Ensure project root directory exists
-if (!fs.existsSync(PROJECT_ROOT)) {
-  fs.mkdirSync(PROJECT_ROOT, { recursive: true });
+// Initialize config paths - must be called after app is ready
+function initConfigPaths() {
+  CONFIG_DIR = getConfigDir();
+  SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json');
+  CHAINS_FILE = path.join(CONFIG_DIR, 'chains.json');
+  RPCS_FILE = path.join(CONFIG_DIR, 'rpcs.json');
+  
+  // Contracts file: try app bundle first, then user data
+  const PROJECT_ROOT = path.join(__dirname, '..');
+  const BUNDLE_CONTRACTS = path.join(PROJECT_ROOT, 'contracts.json');
+  const USER_CONTRACTS = path.join(CONFIG_DIR, 'contracts.json');
+  // Prefer bundle contracts if it exists, otherwise use user data
+  CONTRACTS_FILE = fs.existsSync(BUNDLE_CONTRACTS) ? BUNDLE_CONTRACTS : USER_CONTRACTS;
+  
+  // App icon is always from the app bundle (not user data)
+  APP_ICON = path.join(PROJECT_ROOT, 'eris_token_app_icon.png');
+  
+  // Ensure config directory exists
+  if (!fs.existsSync(CONFIG_DIR)) {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+  
+  // Log file paths for debugging
+  console.log('Config directory:', CONFIG_DIR);
+  console.log('Settings file:', SETTINGS_FILE);
+  console.log('Chains file:', CHAINS_FILE);
+  console.log('RPCs file:', RPCS_FILE);
+  console.log('Contracts file:', CONTRACTS_FILE);
+  console.log('isPackaged:', app.isPackaged);
 }
 
 // Initialize default config files if they don't exist
 function initConfigFiles() {
+  // Ensure paths are initialized
+  if (!CONFIG_DIR) {
+    initConfigPaths();
+  }
+  
   const defaultSettings = {
     mining_account_public_address: '0xYourMiningAddressHere',
     mining_account_private_key: '0xYourPrivateKeyHere',
@@ -281,11 +317,21 @@ app.whenReady().then(() => {
     console.log('isDev:', isDev);
     console.log('isPackaged:', app.isPackaged);
     
+    // Initialize config paths first (requires app to be ready for userData path)
+    initConfigPaths();
+    // Then initialize default config files if they don't exist
     initConfigFiles();
+    // Finally create the window
     createWindow();
   } catch (error) {
     console.error('Error during app initialization:', error);
-    // Still try to create window for debugging
+    // Still try to initialize paths and create window for debugging
+    try {
+      initConfigPaths();
+      initConfigFiles();
+    } catch (e) {
+      console.error('Error initializing config:', e);
+    }
     createWindow();
   }
 
@@ -307,9 +353,20 @@ app.on('window-all-closed', () => {
 // IPC Handlers
 ipcMain.handle('read-settings', () => {
   try {
+    // Ensure paths are initialized
+    if (!CONFIG_DIR) {
+      initConfigPaths();
+    }
+    
     if (!fs.existsSync(SETTINGS_FILE)) {
       console.log(`Settings file not found at: ${SETTINGS_FILE}`);
-      return null;
+      // Try to create default settings
+      initConfigFiles();
+      // Check again after initialization
+      if (!fs.existsSync(SETTINGS_FILE)) {
+        console.error(`Failed to create settings file at: ${SETTINGS_FILE}`);
+        return null;
+      }
     }
     const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
     const settings = JSON.parse(data);
@@ -375,6 +432,10 @@ ipcMain.handle('read-settings', () => {
 
 ipcMain.handle('write-settings', (_event: Electron.IpcMainInvokeEvent, settings: any) => {
   try {
+    // Ensure paths are initialized
+    if (!CONFIG_DIR) {
+      initConfigPaths();
+    }
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
     console.log(`Settings written to: ${SETTINGS_FILE}`);
     return true;
@@ -387,15 +448,28 @@ ipcMain.handle('write-settings', (_event: Electron.IpcMainInvokeEvent, settings:
 
 ipcMain.handle('read-chains', () => {
   try {
+    // Ensure paths are initialized
+    if (!CONFIG_DIR) {
+      initConfigPaths();
+    }
+    // Initialize default chains if file doesn't exist
+    if (!fs.existsSync(CHAINS_FILE)) {
+      initConfigFiles();
+    }
     const data = fs.readFileSync(CHAINS_FILE, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
+    console.error(`Failed to read chains: ${error}`);
     return null;
   }
 });
 
 ipcMain.handle('write-chains', (_event: Electron.IpcMainInvokeEvent, chains: any) => {
   try {
+    // Ensure paths are initialized
+    if (!CONFIG_DIR) {
+      initConfigPaths();
+    }
     fs.writeFileSync(CHAINS_FILE, JSON.stringify(chains, null, 2), 'utf-8');
     return true;
   } catch (error: any) {
@@ -406,15 +480,28 @@ ipcMain.handle('write-chains', (_event: Electron.IpcMainInvokeEvent, chains: any
 
 ipcMain.handle('read-rpcs', () => {
   try {
+    // Ensure paths are initialized
+    if (!CONFIG_DIR) {
+      initConfigPaths();
+    }
+    // Initialize default RPCs if file doesn't exist
+    if (!fs.existsSync(RPCS_FILE)) {
+      initConfigFiles();
+    }
     const data = fs.readFileSync(RPCS_FILE, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
+    console.error(`Failed to read RPCs: ${error}`);
     return null;
   }
 });
 
 ipcMain.handle('write-rpcs', (_event: Electron.IpcMainInvokeEvent, rpcs: any) => {
   try {
+    // Ensure paths are initialized
+    if (!CONFIG_DIR) {
+      initConfigPaths();
+    }
     fs.writeFileSync(RPCS_FILE, JSON.stringify(rpcs, null, 2), 'utf-8');
     return true;
   } catch (error: any) {
@@ -425,6 +512,10 @@ ipcMain.handle('write-rpcs', (_event: Electron.IpcMainInvokeEvent, rpcs: any) =>
 
 ipcMain.handle('read-contracts', () => {
   try {
+    // Ensure paths are initialized
+    if (!CONFIG_DIR) {
+      initConfigPaths();
+    }
     if (!fs.existsSync(CONTRACTS_FILE)) {
       console.log(`Contracts file not found at: ${CONTRACTS_FILE}`);
       return null;
