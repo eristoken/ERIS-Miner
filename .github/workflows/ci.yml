@@ -90,11 +90,6 @@ jobs:
         run: |
           # forge.config.js reads from environment variables, no modification needed
           echo "Code signing will be configured via environment variables"
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       
       - name: Package for macOS
         run: npm run make:mac
