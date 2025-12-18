@@ -10,7 +10,27 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = function(creator) {
-  const wxsPath = path.join(creator.directory, 'main.wxs');
+  // Handle the case where creator or directory might be undefined
+  if (!creator) {
+    console.warn('WiX hook: Creator object is undefined');
+    return;
+  }
+  
+  // The directory might not be set when beforeCreate is called
+  // We need to safely check for it
+  const directory = creator.directory;
+  
+  if (!directory || typeof directory !== 'string') {
+    // Directory not available yet - this is okay, the hook might run before directory is set
+    // We'll skip the modification for now - the installer will work, just won't auto-launch
+    console.warn('WiX hook: Directory not available in creator object. Skipping auto-launch modification.');
+    if (process.env.DEBUG) {
+      console.log('Creator object keys:', Object.keys(creator));
+    }
+    return;
+  }
+  
+  const wxsPath = path.join(directory, 'main.wxs');
   
   if (!fs.existsSync(wxsPath)) {
     console.warn('WiX template file not found:', wxsPath);
