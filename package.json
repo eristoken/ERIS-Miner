@@ -61,6 +61,7 @@
         "name": "ERIS-Miner",
         "executableName": "eris-miner",
         "icon": "./eris_token_app_icon",
+        "asar": true,
         "osxSign": {
           "identity": "@env:APPLE_SIGNING_IDENTITY",
           "hardenedRuntime": true,
