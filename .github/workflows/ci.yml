@@ -137,6 +137,56 @@ jobs:
       - name: Package for macOS
         run: npm run make:mac
       
+      - name: Verify code signing and notarization (if enabled)
+        if: env.CODE_SIGNING_ENABLED == 'true'
+        run: |
+          # Verify the app is properly signed
+          APP_PATH=$(find out/make -name "*.app" -type d | head -1)
+          if [ -n "$APP_PATH" ]; then
+            echo "Verifying code signature for: $APP_PATH"
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH" || {
+              echo "ERROR: Code signature verification failed!"
+              exit 1
+            }
+            echo "✓ Code signature verified successfully"
+            
+            # Check signing identity
+            echo ""
+            echo "Signing identity:"
+            codesign -dvv "$APP_PATH" 2>&1 | grep -E "Authority|TeamIdentifier" || true
+            
+            # Check if app is notarized (stapled)
+            echo ""
+            echo "Checking notarization status..."
+            if stapler validate "$APP_PATH" 2>/dev/null; then
+              echo "✓ App is notarized and stapled - no malware warning should appear"
+            else
+              echo "⚠ App is signed but notarization ticket not stapled yet"
+              echo "Attempting to staple notarization ticket..."
+              
+              # Try to staple - this will work if notarization completed
+              if stapler staple "$APP_PATH" 2>/dev/null; then
+                echo "✓ Successfully stapled notarization ticket"
+                stapler validate "$APP_PATH" && echo "✓ App is now notarized and stapled"
+              else
+                echo "⚠ Could not staple - notarization may still be in progress"
+                echo "Note: Notarization can take 5-15 minutes. The app will work but may show warnings until notarization completes."
+                echo "After notarization completes, you can manually staple:"
+                echo "  stapler staple \"$APP_PATH\""
+              fi
+            fi
+            
+            # Also check DMG if it exists
+            DMG_PATH=$(find out/make -name "*.dmg" | head -1)
+            if [ -n "$DMG_PATH" ]; then
+              echo ""
+              echo "Checking DMG signature..."
+              codesign --verify --verbose=2 "$DMG_PATH" 2>&1 | head -5 || echo "DMG is not signed (optional)"
+            fi
+          else
+            echo "Warning: No .app bundle found to verify"
+          fi
+      
       - name: Remove quarantine and fix permissions (for unsigned apps)
         if: env.CODE_SIGNING_ENABLED != 'true'
         run: |

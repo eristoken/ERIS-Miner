@@ -378,16 +378,6 @@ export default function Home() {
                         </Typography>
                       </Box>
                     </Grid>
-                    <Grid item xs={6} sm={4} md={2.4}>
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
-                          Failed Solutions
-                        </Typography>
-                        <Typography variant="h5" color={stats.failedSolutions > 0 ? 'error' : 'text.primary'}>
-                          {stats.failedSolutions}
-                        </Typography>
-                      </Box>
-                    </Grid>
                   </Grid>
                 </CardContent>
               </Card>
