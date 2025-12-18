@@ -60,7 +60,7 @@
       "packagerConfig": {
         "name": "ERIS-Miner",
         "executableName": "eris-miner",
-        "icon": "./eris_token_app_icon.png",
+        "icon": "./eris_token_app_icon.icns",
         "asar": true
       },
       "makers": [
@@ -68,7 +68,7 @@
           "name": "@electron-forge/maker-dmg",
           "config": {
             "name": "ERIS-Miner",
-            "icon": "./eris_token_app_icon.png"
+            "icon": "./eris_token_app_icon.icns"
           }
         },
         {
@@ -80,6 +80,7 @@
           "config": {
             "name": "ERIS-Miner",
             "description": "ERC-918 Token Miner",
+            "manufacturer": "ERIS Token",
             "icon": "./eris_token_app_icon.ico",
             "ui": {
               "chooseDirectory": true

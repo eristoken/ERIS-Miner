@@ -112,12 +112,22 @@ jobs:
       - name: Package for macOS
         run: npm run make:mac
       
-      - name: Remove quarantine attribute (for unsigned apps)
+      - name: Remove quarantine and fix permissions (for unsigned apps)
         if: env.APPLE_SIGNING_IDENTITY == ''
         run: |
           # Remove quarantine attribute so macOS doesn't block unsigned apps
           find out/make -name "*.app" -exec xattr -cr {} \;
           find out/make -name "*.dmg" -exec xattr -cr {} \;
+          find out/make -name "*.zip" -exec xattr -cr {} \;
+          
+          # Also remove quarantine from DMG contents
+          for dmg in out/make/*.dmg; do
+            if [ -f "$dmg" ]; then
+              hdiutil attach "$dmg" -mountpoint /Volumes/ERIS-Miner -quiet -nobrowse || true
+              xattr -cr /Volumes/ERIS-Miner/ERIS-Miner.app 2>/dev/null || true
+              hdiutil detach /Volumes/ERIS-Miner -quiet || true
+            fi
+          done
       
       - name: Determine version for artifacts
         id: version
@@ -247,6 +257,14 @@ jobs:
           name: eris-miner-windows-exe-${{ steps.version.outputs.version }}
           path: ./artifacts/windows
           continue-on-error: true
+      
+      - name: Verify artifacts are extracted
+        run: |
+          echo "Checking macOS artifacts..."
+          ls -la ./artifacts/macos/ || echo "No macOS artifacts found"
+          echo ""
+          echo "Checking Windows artifacts..."
+          ls -la ./artifacts/windows/ || echo "No Windows artifacts found"
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
