@@ -37,6 +37,8 @@ export interface RpcEndpoint {
   name: string;
 }
 
+export type RewardTier = 'Enigma23' | 'ErisFavor' | 'DiscordianBlessing' | 'DiscordantMine' | 'NeutralMine' | null;
+
 export interface MiningStats {
   hashesPerSecond: number;
   totalHashes: number;
@@ -51,6 +53,8 @@ export interface MiningStats {
   isSubmitting: boolean;
   pendingSolutions: number;
   errorMessage: string | null;
+  lastTier: RewardTier;
+  enigma23Count: number;
 }
 
 export interface LogEntry {

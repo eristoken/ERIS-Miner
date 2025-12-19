@@ -10,13 +10,16 @@ import {
   CircularProgress,
   Snackbar,
   Alert,
+  Dialog,
+  DialogContent,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import { Miner } from '../lib/miner';
 import { RpcManager } from '../lib/rpcManager';
-import { Settings, MiningStats, Chain } from '../types';
+import { Settings, MiningStats, Chain, RewardTier } from '../types';
 import { addLog } from './Console';
+import Enigma23Jackpot from '../components/Enigma23Jackpot';
 // @ts-ignore - Image import
 import erisBanner from '../../eris_app_banner.png';
 
@@ -42,6 +45,8 @@ export default function Home() {
     solutionFound: false,
     isSubmitting: false,
     errorMessage: null,
+    lastTier: null,
+    enigma23Count: 0,
   });
   const [miner, setMiner] = useState<Miner | null>(sharedMiner);
   const [loading, setLoading] = useState(true);
@@ -56,6 +61,21 @@ export default function Home() {
     message: '',
     severity: 'info',
   });
+  
+  // Tier notification state
+  const [tierNotification, setTierNotification] = useState<{
+    open: boolean;
+    tier: RewardTier;
+    reward: string;
+  }>({
+    open: false,
+    tier: null,
+    reward: '0',
+  });
+
+  // Enigma23 Jackpot state
+  const [showJackpot, setShowJackpot] = useState(false);
+  const [jackpotReward, setJackpotReward] = useState('0');
   
   // Track previous stats to detect changes for toasts
   const [prevStats, setPrevStats] = useState<MiningStats>(stats);
@@ -136,6 +156,22 @@ export default function Home() {
     // Always (re)bind callbacks so the current Home instance receives updates
     sharedMiner.setOnStatsUpdate((updatedStats) => {
       setStats(updatedStats);
+    });
+
+    // Set up tier update callback
+    sharedMiner.setOnTierUpdate((tier, reward) => {
+      if (tier === 'Enigma23') {
+        // Show special jackpot animation
+        setJackpotReward(reward);
+        setShowJackpot(true);
+      } else {
+        // Show regular tier notification
+        setTierNotification({
+          open: true,
+          tier,
+          reward,
+        });
+      }
     });
 
     sharedRpcManager.setOnRpcSwitch((chainId, newRpc) => {
@@ -227,6 +263,56 @@ export default function Home() {
             {toast.message}
           </Alert>
         </Snackbar>
+
+        {/* Tier Notification */}
+        <Snackbar
+          open={tierNotification.open}
+          autoHideDuration={5000}
+          onClose={() => setTierNotification({ ...tierNotification, open: false })}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={() => setTierNotification({ ...tierNotification, open: false })}
+            severity="success"
+            sx={{ 
+              width: '100%',
+              fontSize: '1.1rem',
+              fontWeight: 'bold',
+            }}
+          >
+            {tierNotification.tier === 'ErisFavor' && '⭐ '}
+            {tierNotification.tier === 'DiscordianBlessing' && '✨ '}
+            {tierNotification.tier === 'DiscordantMine' && '⚡ '}
+            {tierNotification.tier === 'NeutralMine' && '⚪ '}
+            {tierNotification.tier === 'ErisFavor' ? 'Eris Favor' :
+             tierNotification.tier === 'DiscordianBlessing' ? 'Discordian Blessing' :
+             tierNotification.tier === 'DiscordantMine' ? 'Discordant Mine' :
+             tierNotification.tier === 'NeutralMine' ? 'Neutral Mine' :
+             'Tier'} Tier Awarded! Reward: {tierNotification.reward} tokens
+          </Alert>
+        </Snackbar>
+
+        {/* Enigma23 Jackpot Dialog */}
+        <Dialog
+          open={showJackpot}
+          onClose={() => setShowJackpot(false)}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{
+            sx: {
+              background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+              border: '3px solid gold',
+              boxShadow: '0 0 30px rgba(255, 215, 0, 0.5)',
+            }
+          }}
+        >
+          <DialogContent sx={{ p: 0 }}>
+            <Enigma23Jackpot 
+              reward={jackpotReward}
+              onClose={() => setShowJackpot(false)}
+            />
+          </DialogContent>
+        </Dialog>
         
         <Grid container spacing={3}>
         <Grid item xs={12}>
@@ -378,6 +464,22 @@ export default function Home() {
                         </Typography>
                       </Box>
                     </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          🎰 Enigma23 Jackpots
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.enigma23Count > 0 ? 'gold' : 'text.primary',
+                            fontWeight: stats.enigma23Count > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.enigma23Count}
+                        </Typography>
+                      </Box>
+                    </Grid>
                   </Grid>
                 </CardContent>
               </Card>
@@ -431,6 +533,30 @@ export default function Home() {
                   {settings.mining_account_public_address}
                 </Typography>
               </Box>
+              {stats.lastTier && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Last Reward Tier
+                  </Typography>
+                  <Typography 
+                    variant="h5" 
+                    sx={{ 
+                      fontWeight: 'bold',
+                      color: stats.lastTier === 'Enigma23' ? 'gold' : 
+                             stats.lastTier === 'ErisFavor' ? 'primary.main' :
+                             stats.lastTier === 'DiscordianBlessing' ? 'success.main' :
+                             stats.lastTier === 'DiscordantMine' ? 'warning.main' :
+                             'text.primary'
+                    }}
+                  >
+                    {stats.lastTier === 'Enigma23' ? '🎰 ENIGMA23 JACKPOT!' :
+                     stats.lastTier === 'ErisFavor' ? '⭐ Eris Favor' :
+                     stats.lastTier === 'DiscordianBlessing' ? '✨ Discordian Blessing' :
+                     stats.lastTier === 'DiscordantMine' ? '⚡ Discordant Mine' :
+                     '⚪ Neutral Mine'}
+                  </Typography>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>

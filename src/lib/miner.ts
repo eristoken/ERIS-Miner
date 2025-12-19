@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { RpcManager } from './rpcManager';
-import { Settings, MiningStats, RpcEndpoint, LogEntry } from '../types';
+import { Settings, MiningStats, RpcEndpoint, LogEntry, RewardTier } from '../types';
 import { addLog } from '../pages/Console';
 import ERC918_ABI from '../../abi.json';
 
@@ -19,11 +19,13 @@ export class Miner {
   private provider: ethers.JsonRpcProvider | null = null;
   private onStatsUpdate?: (stats: MiningStats) => void;
   private onLog?: (log: LogEntry) => void;
+  private onTierUpdate?: (tier: RewardTier, reward: string) => void;
   private startTime: number = 0;
   private totalHashes: number = 0;
   private solutionsFound: number = 0;
   private tokensMinted: number = 0;
   private failedSolutions: number = 0;
+  private enigma23Count: number = 0;
 
   constructor(rpcManager: RpcManager) {
     this.rpcManager = rpcManager;
@@ -41,11 +43,17 @@ export class Miner {
       isSubmitting: false,
       pendingSolutions: 0,
       errorMessage: null,
+      lastTier: null,
+      enigma23Count: 0,
     };
   }
 
   setOnStatsUpdate(callback: (stats: MiningStats) => void) {
     this.onStatsUpdate = callback;
+  }
+
+  setOnTierUpdate(callback: (tier: RewardTier, reward: string) => void) {
+    this.onTierUpdate = callback;
   }
 
   setOnLog(callback: (log: LogEntry) => void) {
@@ -328,27 +336,129 @@ export class Miner {
       const receipt = await tx.wait();
       this.log('success', `Solution confirmed! Block: ${receipt.blockNumber}`);
 
-      // Parse Mint event to get reward amount
-      const mintEvent = receipt.logs.find((log: any) => {
-        try {
-          const parsed = contractWithProvider.interface.parseLog(log);
-          return parsed && parsed.name === 'Mint';
-        } catch {
-          return false;
-        }
-      });
+      // Parse events from receipt - wrap in try-catch to prevent errors from stopping miner
+      try {
+        // Parse Mint event to get reward amount
+        const mintEvent = receipt.logs.find((log: any) => {
+          try {
+            const parsed = contractWithProvider.interface.parseLog(log);
+            return parsed && parsed.name === 'Mint';
+          } catch {
+            return false;
+          }
+        });
 
-      if (mintEvent) {
-        const parsed = contractWithProvider.interface.parseLog(mintEvent);
-        if (parsed) {
-          const rewardAmount = parsed.args.reward_amount;
-          this.tokensMinted += Number(ethers.formatEther(rewardAmount));
+        let rewardAmount = BigInt(0);
+        if (mintEvent) {
+          try {
+            const parsed = contractWithProvider.interface.parseLog(mintEvent);
+            if (parsed && parsed.args) {
+              // Mint event has rewardAmount field (camelCase)
+              const rewardArg = parsed.args.rewardAmount || parsed.args.reward_amount;
+              if (rewardArg != null && rewardArg !== undefined) {
+                rewardAmount = BigInt(rewardArg.toString());
+                this.tokensMinted += Number(ethers.formatEther(rewardAmount));
+                this.solutionsFound++;
+                this.log('info', `Mint event parsed: ${ethers.formatEther(rewardAmount)} tokens`);
+              } else {
+                // If rewardAmount is null, still increment solution count since transaction succeeded
+                this.log('warn', 'Mint event found but rewardAmount is null, incrementing solution count anyway');
+                this.solutionsFound++;
+              }
+            } else {
+              // If parsing succeeded but args is missing, still increment
+              this.log('warn', 'Mint event parsed but args missing, incrementing solution count anyway');
+              this.solutionsFound++;
+            }
+          } catch (parseError: any) {
+            this.log('warn', `Failed to parse Mint event: ${parseError.message}. Transaction succeeded, incrementing counters anyway.`);
+            // Still increment counters since transaction was successful
+            this.solutionsFound++;
+          }
+        } else {
+          // No Mint event found, but transaction succeeded - increment counters anyway
+          this.log('warn', 'No Mint event found in receipt, but transaction succeeded. Incrementing solution count.');
           this.solutionsFound++;
-          
-          // Update stats immediately after incrementing counters
-          this.updateStats();
         }
+
+        // Parse tier events to determine which tier was awarded
+        const tierEvents = ['Enigma23', 'ErisFavor', 'DiscordianBlessing', 'DiscordantMine', 'NeutralMine'];
+        let detectedTier: RewardTier = null;
+        let tierRewardAmount: bigint | null = null;
+        
+        for (const tierName of tierEvents) {
+          const tierEvent = receipt.logs.find((log: any) => {
+            try {
+              const parsed = contractWithProvider.interface.parseLog(log);
+              return parsed && parsed.name === tierName;
+            } catch {
+              return false;
+            }
+          });
+
+          if (tierEvent) {
+            detectedTier = tierName as RewardTier;
+            try {
+              const parsed = contractWithProvider.interface.parseLog(tierEvent);
+              if (parsed && parsed.args) {
+                // Try to get reward from tier event, but handle null/undefined
+                const rewardArg = parsed.args.reward;
+                if (rewardArg != null && rewardArg !== undefined) {
+                  tierRewardAmount = BigInt(rewardArg.toString());
+                }
+              }
+            } catch (parseError: any) {
+              this.log('warn', `Failed to parse ${tierName} event: ${parseError.message}`);
+            }
+            break; // Only one tier event should be emitted per transaction
+          }
+        }
+
+        // Use tier event reward if available, otherwise fall back to Mint event reward
+        const finalRewardAmount = tierRewardAmount != null ? tierRewardAmount : rewardAmount;
+        const rewardString = ethers.formatEther(finalRewardAmount);
+
+        // If we didn't get reward from Mint event but got it from tier event, update tokensMinted
+        if (rewardAmount === BigInt(0) && tierRewardAmount != null && tierRewardAmount > BigInt(0)) {
+          this.tokensMinted += Number(ethers.formatEther(tierRewardAmount));
+          this.log('info', `Updated tokensMinted from tier event: ${ethers.formatEther(tierRewardAmount)} tokens`);
+        }
+
+        // Update last tier in stats
+        if (detectedTier) {
+          this.stats.lastTier = detectedTier;
+          
+          // Increment Enigma23 counter if this is the jackpot
+          if (detectedTier === 'Enigma23') {
+            this.enigma23Count++;
+            this.log('success', `🎰🎰🎰 ENIGMA23 JACKPOT #${this.enigma23Count}! Reward: ${rewardString} tokens 🎰🎰🎰`);
+          } else {
+            this.log('success', `🎰 ${detectedTier} tier awarded! Reward: ${rewardString} tokens`);
+          }
+          
+          // Notify UI about tier update
+          if (this.onTierUpdate) {
+            this.onTierUpdate(detectedTier, rewardString);
+          }
+        } else {
+          // If no tier event found, default to NeutralMine (base tier)
+          detectedTier = 'NeutralMine';
+          this.stats.lastTier = detectedTier;
+          if (this.onTierUpdate && finalRewardAmount > BigInt(0)) {
+            this.onTierUpdate(detectedTier, rewardString);
+          }
+        }
+      } catch (eventParseError: any) {
+        // Log error but don't fail the submission - transaction was successful
+        this.log('warn', `Failed to parse events from receipt: ${eventParseError.message}. Transaction was successful.`);
+        // Still increment counters if we can't parse events
+        this.solutionsFound++;
+        // Default to NeutralMine if we can't detect tier
+        this.stats.lastTier = 'NeutralMine';
       }
+      
+      // Update stats immediately after incrementing counters
+      this.updateStats();
 
       return true;
     } catch (error: any) {
@@ -490,6 +600,7 @@ export class Miner {
       this.solutionsFound = 0;
       this.tokensMinted = 0;
       this.failedSolutions = 0;
+      this.enigma23Count = 0;
       this.stats.isMining = true;
 
       // Reset displayed stats when starting
@@ -498,6 +609,7 @@ export class Miner {
       this.stats.solutionsFound = 0;
       this.stats.tokensMinted = 0;
       this.stats.failedSolutions = 0;
+      this.stats.enigma23Count = 0;
       this.stats.solutionFound = false;
       this.stats.isSubmitting = false;
       this.stats.pendingSolutions = 0;
@@ -546,11 +658,13 @@ export class Miner {
     this.solutionsFound = 0;
     this.tokensMinted = 0;
     this.failedSolutions = 0;
+    this.enigma23Count = 0;
     this.stats.hashesPerSecond = 0;
     this.stats.totalHashes = 0;
     this.stats.solutionsFound = 0;
     this.stats.tokensMinted = 0;
     this.stats.failedSolutions = 0;
+    this.stats.enigma23Count = 0;
     this.stats.solutionFound = false;
     this.stats.isSubmitting = false;
     this.stats.pendingSolutions = 0;
@@ -884,6 +998,7 @@ export class Miner {
     this.stats.solutionsFound = this.solutionsFound;
     this.stats.tokensMinted = this.tokensMinted;
     this.stats.failedSolutions = this.failedSolutions;
+    this.stats.enigma23Count = this.enigma23Count;
     
     // Ensure isMining flag matches internal state
     this.stats.isMining = this.isMining;
