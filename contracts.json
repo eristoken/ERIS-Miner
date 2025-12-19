@@ -8,7 +8,7 @@
         "address": "0xCeF263A2587fe8F9d4BEDAb339E4b5258ac07690"
     },
     "devnet": {
-        "name": "FTICTest",
-        "address": "0xCeF263A2587fe8F9d4BEDAb339E4b5258ac07690"
+        "name": "ERISTest",
+        "address": "0x6a04171d9E2e59b56CB401b96f34F4FE4dec71d9"
     }
 }

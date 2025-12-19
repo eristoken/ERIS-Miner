@@ -1,7 +1,7 @@
 export interface Settings {
   mining_account_public_address: string;
   mining_account_private_key: string;
-  network_type: 'mainnet' | 'testnet';
+  network_type: 'mainnet' | 'testnet' | 'devnet';
   gas_price_gwei: number;
   priority_gas_fee_gwei: number;
   gas_limit: number;
@@ -19,6 +19,7 @@ export interface Contract {
 export interface Contracts {
   mainnet: Contract;
   testnet: Contract;
+  devnet: Contract;
 }
 
 export interface Chain {
