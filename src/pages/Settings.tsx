@@ -192,8 +192,11 @@ export default function Settings() {
                   label="Network"
                   onChange={(e) => handleChange('network_type', e.target.value)}
                 >
-                  <MenuItem value="mainnet">Mainnet</MenuItem>
-                  <MenuItem value="testnet">Testnet</MenuItem>
+                  {contracts && Object.entries(contracts).map(([networkKey, contract]) => (
+                    <MenuItem key={networkKey} value={networkKey}>
+                      {contract.name} ({networkKey})
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
               {contracts && (

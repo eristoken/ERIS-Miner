@@ -6,5 +6,9 @@
     "testnet": {
         "name": "FTICSepolia",
         "address": "0xCeF263A2587fe8F9d4BEDAb339E4b5258ac07690"
+    },
+    "devnet": {
+        "name": "FTICTest",
+        "address": "0xCeF263A2587fe8F9d4BEDAb339E4b5258ac07690"
     }
 }
