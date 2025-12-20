@@ -26,6 +26,10 @@ export class Miner {
   private tokensMinted: number = 0;
   private failedSolutions: number = 0;
   private enigma23Count: number = 0;
+  private erisFavorCount: number = 0;
+  private discordianBlessingCount: number = 0;
+  private discordantMineCount: number = 0;
+  private neutralMineCount: number = 0;
 
   constructor(rpcManager: RpcManager) {
     this.rpcManager = rpcManager;
@@ -45,6 +49,10 @@ export class Miner {
       errorMessage: null,
       lastTier: null,
       enigma23Count: 0,
+      erisFavorCount: 0,
+      discordianBlessingCount: 0,
+      discordantMineCount: 0,
+      neutralMineCount: 0,
     };
   }
 
@@ -428,12 +436,22 @@ export class Miner {
         if (detectedTier) {
           this.stats.lastTier = detectedTier;
           
-          // Increment Enigma23 counter if this is the jackpot
+          // Increment appropriate tier counter
           if (detectedTier === 'Enigma23') {
             this.enigma23Count++;
             this.log('success', `🎰🎰🎰 ENIGMA23 JACKPOT #${this.enigma23Count}! Reward: ${rewardString} tokens 🎰🎰🎰`);
-          } else {
-            this.log('success', `🎰 ${detectedTier} tier awarded! Reward: ${rewardString} tokens`);
+          } else if (detectedTier === 'ErisFavor') {
+            this.erisFavorCount++;
+            this.log('success', `⭐ Eris Favor tier awarded! Reward: ${rewardString} tokens`);
+          } else if (detectedTier === 'DiscordianBlessing') {
+            this.discordianBlessingCount++;
+            this.log('success', `✨ Discordian Blessing tier awarded! Reward: ${rewardString} tokens`);
+          } else if (detectedTier === 'DiscordantMine') {
+            this.discordantMineCount++;
+            this.log('success', `⚡ Discordant Mine tier awarded! Reward: ${rewardString} tokens`);
+          } else if (detectedTier === 'NeutralMine') {
+            this.neutralMineCount++;
+            this.log('success', `⚪ Neutral Mine tier awarded! Reward: ${rewardString} tokens`);
           }
           
           // Notify UI about tier update
@@ -444,6 +462,7 @@ export class Miner {
           // If no tier event found, default to NeutralMine (base tier)
           detectedTier = 'NeutralMine';
           this.stats.lastTier = detectedTier;
+          this.neutralMineCount++;
           if (this.onTierUpdate && finalRewardAmount > BigInt(0)) {
             this.onTierUpdate(detectedTier, rewardString);
           }
@@ -455,6 +474,7 @@ export class Miner {
         this.solutionsFound++;
         // Default to NeutralMine if we can't detect tier
         this.stats.lastTier = 'NeutralMine';
+        this.neutralMineCount++;
       }
       
       // Update stats immediately after incrementing counters
@@ -601,6 +621,10 @@ export class Miner {
       this.tokensMinted = 0;
       this.failedSolutions = 0;
       this.enigma23Count = 0;
+      this.erisFavorCount = 0;
+      this.discordianBlessingCount = 0;
+      this.discordantMineCount = 0;
+      this.neutralMineCount = 0;
       this.stats.isMining = true;
 
       // Reset displayed stats when starting
@@ -610,6 +634,10 @@ export class Miner {
       this.stats.tokensMinted = 0;
       this.stats.failedSolutions = 0;
       this.stats.enigma23Count = 0;
+      this.stats.erisFavorCount = 0;
+      this.stats.discordianBlessingCount = 0;
+      this.stats.discordantMineCount = 0;
+      this.stats.neutralMineCount = 0;
       this.stats.solutionFound = false;
       this.stats.isSubmitting = false;
       this.stats.pendingSolutions = 0;
@@ -659,12 +687,20 @@ export class Miner {
     this.tokensMinted = 0;
     this.failedSolutions = 0;
     this.enigma23Count = 0;
+    this.erisFavorCount = 0;
+    this.discordianBlessingCount = 0;
+    this.discordantMineCount = 0;
+    this.neutralMineCount = 0;
     this.stats.hashesPerSecond = 0;
     this.stats.totalHashes = 0;
     this.stats.solutionsFound = 0;
     this.stats.tokensMinted = 0;
     this.stats.failedSolutions = 0;
     this.stats.enigma23Count = 0;
+    this.stats.erisFavorCount = 0;
+    this.stats.discordianBlessingCount = 0;
+    this.stats.discordantMineCount = 0;
+    this.stats.neutralMineCount = 0;
     this.stats.solutionFound = false;
     this.stats.isSubmitting = false;
     this.stats.pendingSolutions = 0;
@@ -999,6 +1035,10 @@ export class Miner {
     this.stats.tokensMinted = this.tokensMinted;
     this.stats.failedSolutions = this.failedSolutions;
     this.stats.enigma23Count = this.enigma23Count;
+    this.stats.erisFavorCount = this.erisFavorCount;
+    this.stats.discordianBlessingCount = this.discordianBlessingCount;
+    this.stats.discordantMineCount = this.discordantMineCount;
+    this.stats.neutralMineCount = this.neutralMineCount;
     
     // Ensure isMining flag matches internal state
     this.stats.isMining = this.isMining;

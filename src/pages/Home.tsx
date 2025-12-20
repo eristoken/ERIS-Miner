@@ -47,6 +47,10 @@ export default function Home() {
     errorMessage: null,
     lastTier: null,
     enigma23Count: 0,
+    erisFavorCount: 0,
+    discordianBlessingCount: 0,
+    discordantMineCount: 0,
+    neutralMineCount: 0,
   });
   const [miner, setMiner] = useState<Miner | null>(sharedMiner);
   const [loading, setLoading] = useState(true);
@@ -464,6 +468,8 @@ export default function Home() {
                         </Typography>
                       </Box>
                     </Grid>
+                  </Grid>
+                  <Grid container spacing={3} sx={{ mt: 1 }}>
                     <Grid item xs={6} sm={4} md={2.4}>
                       <Box>
                         <Typography variant="body2" color="text.secondary">
@@ -477,6 +483,70 @@ export default function Home() {
                           }}
                         >
                           {stats.enigma23Count}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          ✨ Discordian Blessing
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.discordianBlessingCount > 0 ? 'success.main' : 'text.primary',
+                            fontWeight: stats.discordianBlessingCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.discordianBlessingCount}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          ⭐ Eris Favor
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.erisFavorCount > 0 ? 'primary.main' : 'text.primary',
+                            fontWeight: stats.erisFavorCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.erisFavorCount}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          ⚪ Neutral Mine
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.neutralMineCount > 0 ? 'text.primary' : 'text.secondary',
+                            fontWeight: stats.neutralMineCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.neutralMineCount}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          ⚡ Discordant Mine
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.discordantMineCount > 0 ? 'warning.main' : 'text.primary',
+                            fontWeight: stats.discordantMineCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.discordantMineCount}
                         </Typography>
                       </Box>
                     </Grid>

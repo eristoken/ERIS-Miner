@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Box, Typography, Button } from '@mui/material';
+// @ts-ignore - Audio file import
+import fanfareSound from './main-library-super-fanfare-276484.mp3';
 
 interface Enigma23JackpotProps {
   reward: string;
@@ -9,9 +11,29 @@ interface Enigma23JackpotProps {
 const SYMBOLS = ['🎰', '💎', '⭐', '💰', '🎁', '🏆', '👑', '💫'];
 const SPIN_DURATION = 3000; // 3 seconds
 
+// Function to play jackpot fanfare sound effect
+function playJackpotSound() {
+  try {
+    const audio = new Audio(fanfareSound);
+    audio.volume = 0.7; // Set volume (0.0 to 1.0)
+    audio.play().catch((error) => {
+      // Silently fail if audio playback is not allowed
+      console.debug('Audio playback not available:', error);
+    });
+  } catch (error) {
+    // Silently fail if audio creation fails
+    console.debug('Audio playback not available:', error);
+  }
+}
+
 export default function Enigma23Jackpot({ reward, onClose }: Enigma23JackpotProps) {
   const [reels, setReels] = useState<string[]>(['🎰', '🎰', '🎰']);
   const [spinning, setSpinning] = useState(true);
+
+  // Play sound effect when component opens
+  useEffect(() => {
+    playJackpotSound();
+  }, []);
 
   useEffect(() => {
     // Slot machine spinning animation
@@ -213,7 +235,7 @@ export default function Enigma23Jackpot({ reward, onClose }: Enigma23JackpotProp
             transition: 'all 0.3s ease',
           }}
         >
-          Claim Your Reward! 🎁
+          Continue! 🎁
         </Button>
       </Box>
     </Box>

@@ -55,6 +55,10 @@ export interface MiningStats {
   errorMessage: string | null;
   lastTier: RewardTier;
   enigma23Count: number;
+  erisFavorCount: number;
+  discordianBlessingCount: number;
+  discordantMineCount: number;
+  neutralMineCount: number;
 }
 
 export interface LogEntry {
