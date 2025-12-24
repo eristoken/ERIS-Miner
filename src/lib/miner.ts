@@ -422,6 +422,45 @@ export class Miner {
           }
         }
 
+        // Fallback: If no tier event found, try to parse MinerStatsUpdated event
+        // This event contains tier number (1-5) which we can map to tier names
+        if (!detectedTier) {
+          const minerStatsEvent = receipt.logs.find((log: any) => {
+            try {
+              const parsed = contractWithProvider.interface.parseLog(log);
+              return parsed && parsed.name === 'MinerStatsUpdated';
+            } catch {
+              return false;
+            }
+          });
+
+          if (minerStatsEvent) {
+            try {
+              const parsed = contractWithProvider.interface.parseLog(minerStatsEvent);
+              if (parsed && parsed.args) {
+                const tierNumber = parsed.args.tier;
+                if (tierNumber != null && tierNumber !== undefined) {
+                  // Map tier number to tier name: 1=DiscordantMine, 2=NeutralMine, 3=ErisFavor, 4=DiscordianBlessing, 5=Enigma23
+                  const tierMap: Record<number, RewardTier> = {
+                    1: 'DiscordantMine',
+                    2: 'NeutralMine',
+                    3: 'ErisFavor',
+                    4: 'DiscordianBlessing',
+                    5: 'Enigma23',
+                  };
+                  const tierNum = Number(tierNumber.toString());
+                  if (tierMap[tierNum]) {
+                    detectedTier = tierMap[tierNum];
+                    this.log('info', `Detected tier from MinerStatsUpdated event: ${detectedTier} (tier ${tierNum})`);
+                  }
+                }
+              }
+            } catch (parseError: any) {
+              this.log('warn', `Failed to parse MinerStatsUpdated event: ${parseError.message}`);
+            }
+          }
+        }
+
         // Use tier event reward if available, otherwise fall back to Mint event reward
         const finalRewardAmount = tierRewardAmount != null ? tierRewardAmount : rewardAmount;
         const rewardString = ethers.formatEther(finalRewardAmount);
