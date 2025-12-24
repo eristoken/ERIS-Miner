@@ -469,10 +469,10 @@ export default function Home() {
                       </Box>
                     </Grid>
                   </Grid>
-                  <Grid container spacing={3} sx={{ mt: 1 }}>
+                  <Grid container spacing={3} sx={{ mt: 1 }} alignItems="flex-start">
                     <Grid item xs={6} sm={4} md={2.4}>
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
                           🎰 Enigma23 Jackpots
                         </Typography>
                         <Typography 
@@ -487,8 +487,8 @@ export default function Home() {
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={4} md={2.4}>
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
                           ✨ Discordian Blessing
                         </Typography>
                         <Typography 
@@ -503,8 +503,8 @@ export default function Home() {
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={4} md={2.4}>
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
                           ⭐ Eris Favor
                         </Typography>
                         <Typography 
@@ -519,8 +519,8 @@ export default function Home() {
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={4} md={2.4}>
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
                           ⚪ Neutral Mine
                         </Typography>
                         <Typography 
@@ -535,8 +535,8 @@ export default function Home() {
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={4} md={2.4}>
-                      <Box>
-                        <Typography variant="body2" color="text.secondary">
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
                           ⚡ Discordant Mine
                         </Typography>
                         <Typography 
