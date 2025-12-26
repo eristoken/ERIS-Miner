@@ -180,8 +180,8 @@ function createWindow() {
   console.log('Preload exists:', fs.existsSync(preloadPath));
   
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 1024,
     icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
       preload: preloadPath,

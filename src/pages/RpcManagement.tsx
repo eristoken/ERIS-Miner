@@ -22,6 +22,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SaveIcon from '@mui/icons-material/Save';
 import { Chain, RpcEndpoint } from '../types';
 import { addLog } from './Console';
 
@@ -165,9 +166,20 @@ export default function RpcManagement() {
     <Box>
       <Card>
         <CardContent>
-          <Typography variant="h5" gutterBottom>
-            RPC Endpoint Management
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h5">
+              RPC Endpoint Management
+            </Typography>
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<SaveIcon />}
+              onClick={handleSave}
+              size="medium"
+            >
+              Save All RPCs
+            </Button>
+          </Box>
 
           {saved && (
             <Alert severity="success" sx={{ mb: 2 }}>
@@ -277,17 +289,6 @@ export default function RpcManagement() {
               </Paper>
             </Grid>
 
-            <Grid item xs={12}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleSave}
-                size="large"
-                fullWidth
-              >
-                Save All RPCs
-              </Button>
-            </Grid>
           </Grid>
         </CardContent>
       </Card>

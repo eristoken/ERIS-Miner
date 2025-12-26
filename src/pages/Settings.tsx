@@ -132,9 +132,19 @@ export default function Settings() {
     <Box>
       <Card>
         <CardContent>
-          <Typography variant="h5" gutterBottom>
-            Mining Settings
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h5">
+              Mining Settings
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={handleSave}
+              size="medium"
+            >
+              Save Settings
+            </Button>
+          </Box>
 
           {saved && (
             <Alert severity="success" sx={{ mb: 2 }}>
@@ -301,16 +311,6 @@ export default function Settings() {
               />
             </Grid>
 
-            <Grid item xs={12}>
-              <Button
-                variant="contained"
-                startIcon={<SaveIcon />}
-                onClick={handleSave}
-                size="large"
-              >
-                Save Settings
-              </Button>
-            </Grid>
           </Grid>
         </CardContent>
       </Card>
