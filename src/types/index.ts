@@ -1,7 +1,7 @@
 export interface Settings {
   mining_account_public_address: string;
   mining_account_private_key: string;
-  network_type: 'mainnet' | 'testnet';
+  network_type: 'mainnet' | 'testnet' | 'devnet';
   gas_price_gwei: number;
   priority_gas_fee_gwei: number;
   gas_limit: number;
@@ -19,6 +19,7 @@ export interface Contract {
 export interface Contracts {
   mainnet: Contract;
   testnet: Contract;
+  devnet: Contract;
 }
 
 export interface Chain {
@@ -36,6 +37,8 @@ export interface RpcEndpoint {
   name: string;
 }
 
+export type RewardTier = 'Enigma23' | 'ErisFavor' | 'DiscordianBlessing' | 'DiscordantMine' | 'NeutralMine' | null;
+
 export interface MiningStats {
   hashesPerSecond: number;
   totalHashes: number;
@@ -50,6 +53,12 @@ export interface MiningStats {
   isSubmitting: boolean;
   pendingSolutions: number;
   errorMessage: string | null;
+  lastTier: RewardTier;
+  enigma23Count: number;
+  erisFavorCount: number;
+  discordianBlessingCount: number;
+  discordantMineCount: number;
+  neutralMineCount: number;
 }
 
 export interface LogEntry {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Card,
@@ -8,8 +8,6 @@ import {
   Grid,
   Paper,
   CircularProgress,
-  Snackbar,
-  Alert,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
@@ -17,6 +15,8 @@ import { Miner } from '../lib/miner';
 import { RpcManager } from '../lib/rpcManager';
 import { Settings, MiningStats, Chain } from '../types';
 import { addLog } from './Console';
+import { showGlobalTierNotification, showGlobalJackpot, showGlobalToast } from '../lib/globalNotifications';
+import { setSharedMinerRef } from '../contexts/NotificationContext';
 // @ts-ignore - Image import
 import erisBanner from '../../eris_app_banner.png';
 
@@ -25,63 +25,129 @@ import erisBanner from '../../eris_app_banner.png';
 let sharedMiner: Miner | null = null;
 let sharedRpcManager: RpcManager | null = null;
 
+// Track dismissed error messages across component remounts
+const dismissedErrors = new Set<string>();
+
 export default function Home() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [chains, setChains] = useState<Record<string, Chain>>({});
-  const [stats, setStats] = useState<MiningStats>({
-    hashesPerSecond: 0,
-    totalHashes: 0,
-    solutionsFound: 0,
-    tokensMinted: 0,
-    failedSolutions: 0,
-    pendingSolutions: 0,
-    currentChallenge: '0x',
-    currentDifficulty: '0',
-    currentReward: '0',
-    isMining: false,
-    solutionFound: false,
-    isSubmitting: false,
-    errorMessage: null,
-  });
+  
+  // Initialize stats from shared miner if it exists (mining continues across navigation)
+  const getInitialStats = (): MiningStats => {
+    if (sharedMiner) {
+      return sharedMiner.getStats();
+    }
+    return {
+      hashesPerSecond: 0,
+      totalHashes: 0,
+      solutionsFound: 0,
+      tokensMinted: 0,
+      failedSolutions: 0,
+      pendingSolutions: 0,
+      currentChallenge: '0x',
+      currentDifficulty: '0',
+      currentReward: '0',
+      isMining: false,
+      solutionFound: false,
+      isSubmitting: false,
+      errorMessage: null,
+      lastTier: null,
+      enigma23Count: 0,
+      erisFavorCount: 0,
+      discordianBlessingCount: 0,
+      discordantMineCount: 0,
+      neutralMineCount: 0,
+    };
+  };
+  
+  const [stats, setStats] = useState<MiningStats>(getInitialStats());
   const [miner, setMiner] = useState<Miner | null>(sharedMiner);
   const [loading, setLoading] = useState(true);
   
-  // Toast state
-  const [toast, setToast] = useState<{
-    open: boolean;
-    message: string;
-    severity: 'success' | 'error' | 'info' | 'warning';
-  }>({
-    open: false,
-    message: '',
-    severity: 'info',
-  });
-  
   // Track previous stats to detect changes for toasts
-  const [prevStats, setPrevStats] = useState<MiningStats>(stats);
+  const [prevStats, setPrevStats] = useState<MiningStats | null>(null);
+  
+  // Track if this is the first render after mount
+  const isFirstRender = useRef(true);
+
+  // Function to clear error message from miner and mark as dismissed
+  const clearErrorMessage = (errorMessage?: string) => {
+    const messageToClear = errorMessage || (sharedMiner?.getStats().errorMessage || null);
+    
+    if (messageToClear) {
+      // Mark this error as dismissed
+      dismissedErrors.add(messageToClear);
+    }
+    
+    if (sharedMiner) {
+      const currentStats = sharedMiner.getStats();
+      if (currentStats.errorMessage) {
+        currentStats.errorMessage = null;
+        // Trigger stats update to reflect the cleared error
+        // Access the private callback using type assertion
+        const minerWithCallback = sharedMiner as any;
+        if (minerWithCallback.onStatsUpdate) {
+          minerWithCallback.onStatsUpdate({ ...currentStats });
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     loadSettings();
+    
+    // If shared miner already exists (mining is running), sync stats immediately
+    // This ensures the UI reflects the actual mining state when navigating back to this tab
+    if (sharedMiner) {
+      const currentStats = sharedMiner.getStats();
+      setStats(currentStats);
+      setMiner(sharedMiner);
+    }
+    
+    // Cleanup when component unmounts (navigating away)
+    // Note: Mining continues in the background - we only clear the error message
+    // The shared miner instance persists across navigation, so mining is not interrupted
+    return () => {
+      if (sharedMiner) {
+        const currentStats = sharedMiner.getStats();
+        if (currentStats.errorMessage) {
+          clearErrorMessage(currentStats.errorMessage);
+        }
+      }
+      // Mining continues running - callbacks are lost but will be rebound when component remounts
+    };
   }, []);
 
   // Handle toast notifications for stats changes
   useEffect(() => {
-    // Submitting toast
-    if (stats.isSubmitting && !prevStats.isSubmitting) {
-      setToast({
-        open: true,
-        message: '⏳ Submitting solution to blockchain...',
-        severity: 'info',
-      });
+    // Initialize prevStats on first render
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      setPrevStats(stats);
+      // Don't show errors on first render - they're likely stale from navigation
+      return;
     }
     
-    // Error toast
-    if (stats.errorMessage && stats.errorMessage !== prevStats.errorMessage) {
-      setToast({
-        open: true,
-        message: `⚠️ ${stats.errorMessage}`,
-        severity: 'error',
-      });
+    // Error toast - show if it's a new error message that hasn't been dismissed
+    // Note: Submission notifications are now handled globally in NotificationContext
+    // Use global notifications so it shows on any tab
+    if (stats.errorMessage) {
+      // Show if:
+      // 1. The error message changed from previous stats (new error occurred)
+      // 2. AND this error hasn't been dismissed by the user
+      const isNewError = prevStats && stats.errorMessage !== prevStats.errorMessage;
+      const notDismissed = !dismissedErrors.has(stats.errorMessage);
+      
+      if (isNewError && notDismissed) {
+        showGlobalToast(`⚠️ ${stats.errorMessage}`, 'error');
+        // Mark error as dismissed when toast is shown (will be cleared when user closes toast)
+        // The error will be cleared when the toast is closed via the NotificationContext
+      }
+    }
+    
+    // Remove from dismissed set when error is resolved (so new occurrences can show)
+    if (!stats.errorMessage && prevStats && prevStats.errorMessage) {
+      dismissedErrors.delete(prevStats.errorMessage);
     }
     
     setPrevStats(stats);
@@ -119,6 +185,7 @@ export default function Home() {
     if (!settings) return;
 
     // Reuse existing shared instances if they exist
+    // These persist across navigation, so mining continues even when user navigates to other tabs
     if (!sharedRpcManager) {
       sharedRpcManager = new RpcManager(
         settings.rpc_rate_limit_ms,
@@ -134,8 +201,21 @@ export default function Home() {
     }
 
     // Always (re)bind callbacks so the current Home instance receives updates
+    // When navigating back to this tab, callbacks are rebound to update the UI
+    // Mining continues in the background regardless of which tab is active
     sharedMiner.setOnStatsUpdate((updatedStats) => {
       setStats(updatedStats);
+    });
+
+    // Set up tier update callback - use global notifications so they show on any tab
+    sharedMiner.setOnTierUpdate((tier, reward) => {
+      if (tier === 'Enigma23') {
+        // Show special jackpot animation
+        showGlobalJackpot(reward);
+      } else {
+        // Show regular tier notification
+        showGlobalTierNotification(tier, reward);
+      }
     });
 
     sharedRpcManager.setOnRpcSwitch((chainId, newRpc) => {
@@ -166,6 +246,9 @@ export default function Home() {
     }
 
     setMiner(sharedMiner);
+    
+    // Register shared miner with notification context for error clearing
+    setSharedMinerRef(sharedMiner);
   };
 
   const handleStartStop = async () => {
@@ -212,22 +295,6 @@ export default function Home() {
 
   return (
       <Box>
-        {/* Toast Notifications */}
-        <Snackbar
-          open={toast.open}
-          autoHideDuration={stats.errorMessage ? 6000 : 3000}
-          onClose={() => setToast({ ...toast, open: false })}
-          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        >
-          <Alert
-            onClose={() => setToast({ ...toast, open: false })}
-            severity={toast.severity}
-            sx={{ width: '100%' }}
-          >
-            {toast.message}
-          </Alert>
-        </Snackbar>
-        
         <Grid container spacing={3}>
         <Grid item xs={12}>
           {/* Banner Image Container with Cards */}
@@ -379,6 +446,88 @@ export default function Home() {
                       </Box>
                     </Grid>
                   </Grid>
+                  <Grid container spacing={3} sx={{ mt: 1 }} alignItems="flex-start">
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
+                          🎰 Enigma23 Jackpots
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.enigma23Count > 0 ? 'gold' : 'text.primary',
+                            fontWeight: stats.enigma23Count > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.enigma23Count}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
+                          ✨ Discordian Blessing
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.discordianBlessingCount > 0 ? 'success.main' : 'text.primary',
+                            fontWeight: stats.discordianBlessingCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.discordianBlessingCount}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
+                          ⭐ Eris Favor
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.erisFavorCount > 0 ? 'primary.main' : 'text.primary',
+                            fontWeight: stats.erisFavorCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.erisFavorCount}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
+                          ⚪ Neutral Mine
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.neutralMineCount > 0 ? 'text.primary' : 'text.secondary',
+                            fontWeight: stats.neutralMineCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.neutralMineCount}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6} sm={4} md={2.4}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5em' }}>
+                          ⚡ Discordant Mine
+                        </Typography>
+                        <Typography 
+                          variant="h5" 
+                          sx={{ 
+                            color: stats.discordantMineCount > 0 ? 'warning.main' : 'text.primary',
+                            fontWeight: stats.discordantMineCount > 0 ? 'bold' : 'normal',
+                          }}
+                        >
+                          {stats.discordantMineCount}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
                 </CardContent>
               </Card>
             </Box>
@@ -431,6 +580,30 @@ export default function Home() {
                   {settings.mining_account_public_address}
                 </Typography>
               </Box>
+              {stats.lastTier && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Last Reward Tier
+                  </Typography>
+                  <Typography 
+                    variant="h5" 
+                    sx={{ 
+                      fontWeight: 'bold',
+                      color: stats.lastTier === 'Enigma23' ? 'gold' : 
+                             stats.lastTier === 'ErisFavor' ? 'primary.main' :
+                             stats.lastTier === 'DiscordianBlessing' ? 'success.main' :
+                             stats.lastTier === 'DiscordantMine' ? 'warning.main' :
+                             'text.primary'
+                    }}
+                  >
+                    {stats.lastTier === 'Enigma23' ? '🎰 ENIGMA23 JACKPOT!' :
+                     stats.lastTier === 'ErisFavor' ? '⭐ Eris Favor' :
+                     stats.lastTier === 'DiscordianBlessing' ? '✨ Discordian Blessing' :
+                     stats.lastTier === 'DiscordantMine' ? '⚡ Discordant Mine' :
+                     '⚪ Neutral Mine'}
+                  </Typography>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>

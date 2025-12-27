@@ -79,6 +79,7 @@ function initConfigFiles() {
   };
 
   const defaultChains = {
+    // Mainnet Chains
     '1': {
       name: 'Ethereum Mainnet',
       chainId: 1,
@@ -104,37 +105,7 @@ function initConfigFiles() {
       chainId: 56,
       nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
     },
-    '57073': {
-      name: 'Ink',
-      chainId: 57073,
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    },
-    '130': {
-      name: 'Unichain',
-      chainId: 130,
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    },
-    '480': {
-      name: 'World Chain',
-      chainId: 480,
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    },
-    '1868': {
-      name: 'Soneium',
-      chainId: 1868,
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    },
-    // Testnets
-    '11155111': {
-      name: 'Sepolia',
-      chainId: 11155111,
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    },
-    '17000': {
-      name: 'Holesky',
-      chainId: 17000,
-      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    },
+    // Testnet Chains
     '84532': {
       name: 'Base Sepolia',
       chainId: 84532,
@@ -145,16 +116,6 @@ function initConfigFiles() {
       chainId: 421614,
       nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     },
-    '80002': {
-      name: 'Polygon Amoy',
-      chainId: 80002,
-      nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-    },
-    '80001': {
-      name: 'Polygon Mumbai',
-      chainId: 80001,
-      nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-    },
     '97': {
       name: 'BNB Testnet',
       chainId: 97,
@@ -163,6 +124,7 @@ function initConfigFiles() {
   };
 
   const defaultRpcs = {
+    // Mainnet RPCs
     '1': [
       { url: 'https://eth.llamarpc.com', name: 'LlamaRPC' },
       { url: 'https://rpc.ankr.com/eth', name: 'Ankr' },
@@ -183,21 +145,7 @@ function initConfigFiles() {
       { url: 'https://bsc-dataseed.binance.org', name: 'Binance Official' },
       { url: 'https://bsc.llamarpc.com', name: 'LlamaRPC' },
     ],
-    '57073': [{ url: 'https://rpc.inkchain.io', name: 'Ink Official' }],
-    '130': [{ url: 'https://rpc.unichain.org', name: 'Unichain Official' }],
-    '480': [{ url: 'https://rpc.worldchain.org', name: 'World Chain Official' }],
-    '1868': [{ url: 'https://rpc.soneium.org', name: 'Soneium Official' }],
-    // Testnets
-    '11155111': [
-      { url: 'https://rpc.sepolia.org', name: 'Sepolia Official' },
-      { url: 'https://ethereum-sepolia-rpc.publicnode.com', name: 'PublicNode' },
-      { url: 'https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161', name: 'Infura' },
-      { url: 'https://sepolia.llamarpc.com', name: 'LlamaRPC' },
-    ],
-    '17000': [
-      { url: 'https://rpc.holesky.ethpandaops.io', name: 'Holesky Official' },
-      { url: 'https://ethereum-holesky-rpc.publicnode.com', name: 'PublicNode' },
-    ],
+    // Testnet RPCs
     '84532': [
       { url: 'https://sepolia.base.org', name: 'Base Sepolia Official' },
       { url: 'https://base-sepolia-rpc.publicnode.com', name: 'PublicNode' },
@@ -205,14 +153,6 @@ function initConfigFiles() {
     '421614': [
       { url: 'https://sepolia-rollup.arbitrum.io/rpc', name: 'Arbitrum Sepolia Official' },
       { url: 'https://arbitrum-sepolia-rpc.publicnode.com', name: 'PublicNode' },
-    ],
-    '80002': [
-      { url: 'https://rpc.amoy.polygon.technology', name: 'Polygon Amoy Official' },
-      { url: 'https://polygon-amoy-rpc.publicnode.com', name: 'PublicNode' },
-    ],
-    '80001': [
-      { url: 'https://rpc-mumbai.maticvigil.com', name: 'MaticVigil' },
-      { url: 'https://polygon-mumbai-rpc.publicnode.com', name: 'PublicNode' },
     ],
     '97': [
       { url: 'https://data-seed-prebsc-1-s1.binance.org:8545', name: 'Binance Testnet 1' },
@@ -240,8 +180,8 @@ function createWindow() {
   console.log('Preload exists:', fs.existsSync(preloadPath));
   
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 1024,
     icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
       preload: preloadPath,

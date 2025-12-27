@@ -5,12 +5,15 @@ A modern, cross-platform desktop application for mining ERC-918 compliant tokens
 ## Features
 
 - **ERC-918 Compliant**: Full support for the ERC-918 Mineable Token Standard
+- **Solo Mining**: Direct contract mining with automatic solution submission
 - **Multi-Chain Support**: Configure and mine on multiple blockchain networks
 - **RPC Management**: Add, remove, and manage RPC endpoints with automatic failover
 - **Rate Limiting**: Configurable RPC rate limiting to prevent API throttling
-- **Auto RPC Switching**: Automatically switch to backup RPCs when rate limited (solo mode)
+- **Auto RPC Switching**: Automatically switch to backup RPCs when rate limited
 - **Multi-Threading**: Configurable CPU thread count for parallel mining
 - **Real-Time Stats**: Live mining statistics including hash rate, solutions found, and tokens minted
+- **Reward Tiers**: Track special reward tiers (Enigma23, ErisFavor, DiscordianBlessing, DiscordantMine, NeutralMine)
+- **Leaderboard**: View mining statistics and rankings on the Stats page
 - **Console Logging**: Clearable console with filtered log output
 - **Modern UI**: Beautiful Material-UI interface with dark theme
 
@@ -55,6 +58,32 @@ npm run build
 This will:
 - Build the React application
 - Compile the Electron main process
+
+## Packaging
+
+Package the application for distribution:
+
+```bash
+# Package for current platform
+npm run package
+
+# Package for specific platform
+npm run package:mac   # macOS
+npm run package:win   # Windows
+```
+
+Create distributable installers:
+
+```bash
+# Create installer for current platform
+npm run make
+
+# Create installer for specific platform
+npm run make:mac   # macOS (DMG)
+npm run make:win   # Windows (MSIX)
+```
+
+See [PACKAGING.md](./PACKAGING.md) for detailed packaging instructions and GitHub Actions workflows.
 
 ## Configuration
 
@@ -112,16 +141,41 @@ RPC endpoints are organized by chain in `rpcs.json`. You can add/remove RPCs thr
 
 3. **Start Mining**: Go to the Home page and click "Start Mining"
 
-4. **Monitor Progress**: View real-time statistics on the Home page and check logs in the Console
+4. **Monitor Progress**: 
+   - View real-time statistics on the Home page
+   - Check detailed mining stats and leaderboard on the Stats page
+   - Review logs in the Console page
+
+## Application Pages
+
+- **Home**: Main mining interface with start/stop controls, real-time statistics, and reward tier tracking
+- **Stats**: View your mining statistics and compare with other miners on the leaderboard
+- **Settings**: Configure mining account, gas fees, thread count, and RPC settings
+- **RPCs**: Manage RPC endpoints for each supported chain
+- **Console**: View and filter mining logs with clearable console output
+- **About**: Application information and version details
 
 ## Mining Algorithm
 
-The miner implements the ERC-918 standard:
+The miner implements the ERC-918 standard for **solo mining**:
 
 1. Fetches the current challenge number from the contract
 2. Calculates `keccak256(challengeNumber, minterAddress, nonce)`
 3. Checks if the hash value is less than or equal to the mining target
 4. Submits valid solutions to the contract's `mint()` function
+
+**Note**: Pool mining is not currently implemented. The application only supports solo mining mode where solutions are submitted directly to the contract.
+
+## Reward Tiers
+
+The miner tracks special reward tiers based on solution difficulty:
+- **Enigma23**: Highest tier reward
+- **ErisFavor**: High tier reward
+- **DiscordianBlessing**: Medium-high tier reward
+- **DiscordantMine**: Medium tier reward
+- **NeutralMine**: Standard tier reward
+
+Reward tier counts are displayed on the Home page and included in your mining statistics.
 
 ## RPC Rate Limiting
 
@@ -137,6 +191,14 @@ Gas prices can be configured in gwei, but support values less than 1 gwei. The a
 
 - **Private Keys**: Private keys are stored in plaintext in `settings.json`. Keep this file secure!
 - **RPC Endpoints**: Use trusted RPC endpoints. Public RPCs may have rate limits or security concerns.
+- **Network Security**: Ensure you're using the correct network (mainnet/testnet) for your mining account.
+
+## Additional Documentation
+
+- [PACKAGING.md](./PACKAGING.md) - Detailed packaging and distribution instructions
+- [CODE_SIGNING.md](./CODE_SIGNING.md) - Code signing setup for macOS and Windows
+- [POOL_MINING_VALIDATION.md](./POOL_MINING_VALIDATION.md) - Pool mining implementation status
+- [THREAD_COUNT_AUDIT.md](./THREAD_COUNT_AUDIT.md) - Thread count configuration details
 
 ## License
 
