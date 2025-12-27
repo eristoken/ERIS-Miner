@@ -19,7 +19,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { Settings as SettingsType, Chain, Contracts } from '../types';
-import { addLog } from './Console';
+import { addLog } from './consoleUtils';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
@@ -69,6 +69,7 @@ export default function Settings() {
           message: 'Contracts loaded from contracts.json',
         });
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const msg = `Failed to load data: ${err.message}`;
       setError(msg);
@@ -80,6 +81,7 @@ export default function Settings() {
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleChange = (field: keyof SettingsType, value: any) => {
     if (!settings) return;
     setSettings({ ...settings, [field]: value });
@@ -109,6 +111,7 @@ export default function Settings() {
           message: msg,
         });
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const msg = `Failed to save: ${err.message}`;
       setError(msg);

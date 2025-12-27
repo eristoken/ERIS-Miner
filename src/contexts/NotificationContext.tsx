@@ -1,25 +1,9 @@
-import { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
+import { useState, ReactNode, useEffect, useRef } from 'react';
 import { Snackbar, Alert, Dialog, DialogContent } from '@mui/material';
-import { RewardTier } from '../types';
 import Enigma23Jackpot from '../components/Enigma23Jackpot';
 import { setGlobalNotificationHandlers } from '../lib/globalNotifications';
-
-// Import shared miner to clear errors
-// @ts-ignore - We need to access the shared miner from Home.tsx
-// This is a workaround since we can't easily pass the clear function through context
-let sharedMinerRef: any = null;
-
-export function setSharedMinerRef(miner: any) {
-  sharedMinerRef = miner;
-}
-
-interface NotificationContextType {
-  showToast: (message: string, severity: 'success' | 'error' | 'info' | 'warning') => void;
-  showTierNotification: (tier: RewardTier, reward: string) => void;
-  showJackpot: (reward: string) => void;
-}
-
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+import { getSharedMinerRef } from './sharedMinerRef';
+import { NotificationContext } from './NotificationContextTypes';
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   // Toast state
@@ -91,8 +75,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     // Poll miner stats to detect submission state changes
     // This works regardless of which tab is active
     const statsPollInterval = setInterval(() => {
-      if (sharedMinerRef) {
-        const stats = sharedMinerRef.getStats();
+      const minerRef = getSharedMinerRef();
+      if (minerRef) {
+        const stats = minerRef.getStats();
         const prevIsSubmitting = prevIsSubmittingRef.current;
         
         // Initialize on first check
@@ -130,11 +115,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         onClose={() => {
           setToast({ ...toast, open: false });
           // Clear error when error toast is closed
-          if (toast.severity === 'error' && toast.message.startsWith('⚠️') && sharedMinerRef) {
-            const currentStats = sharedMinerRef.getStats();
+          const minerRef = getSharedMinerRef();
+          if (toast.severity === 'error' && toast.message.startsWith('⚠️') && minerRef) {
+            const currentStats = minerRef.getStats();
             if (currentStats.errorMessage) {
               currentStats.errorMessage = null;
-              const minerWithCallback = sharedMinerRef as any;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const minerWithCallback = minerRef as any;
               if (minerWithCallback.onStatsUpdate) {
                 minerWithCallback.onStatsUpdate({ ...currentStats });
               }
@@ -148,11 +135,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           onClose={() => {
             setToast({ ...toast, open: false });
             // Clear error when error toast is closed
-            if (toast.severity === 'error' && toast.message.startsWith('⚠️') && sharedMinerRef) {
-              const currentStats = sharedMinerRef.getStats();
+            const minerRef = getSharedMinerRef();
+            if (toast.severity === 'error' && toast.message.startsWith('⚠️') && minerRef) {
+              const currentStats = minerRef.getStats();
               if (currentStats.errorMessage) {
                 currentStats.errorMessage = null;
-                const minerWithCallback = sharedMinerRef as any;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const minerWithCallback = minerRef as any;
                 if (minerWithCallback.onStatsUpdate) {
                   minerWithCallback.onStatsUpdate({ ...currentStats });
                 }
@@ -230,11 +219,5 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useNotifications() {
-  const context = useContext(NotificationContext);
-  if (context === undefined) {
-    throw new Error('useNotifications must be used within a NotificationProvider');
-  }
-  return context;
-}
+// Export context (useNotifications hook is in separate file to avoid react-refresh warning)
 
