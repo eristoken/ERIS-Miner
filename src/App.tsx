@@ -13,6 +13,7 @@ import {
   createTheme,
   CssBaseline,
 } from '@mui/material';
+import { NotificationProvider } from './contexts/NotificationContext';
 import Home from './pages/Home';
 import Stats from './pages/Stats';
 import Settings from './pages/Settings';
@@ -72,26 +73,28 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Router hook={useHashLocation}>
-        <Box sx={{ flexGrow: 1 }}>
-          <AppBar position="static">
-            <Toolbar>
-              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-                $ERIS Token Official GUI Miner
-              </Typography>
-            </Toolbar>
-          </AppBar>
-          <NavigationTabs />
-          <Container maxWidth="lg" sx={{ mt: 3, mb: 3 }}>
-            <Route path="/" component={Home} />
-            <Route path="/stats" component={Stats} />
-            <Route path="/settings" component={Settings} />
-            <Route path="/rpcs" component={RpcManagement} />
-            <Route path="/console" component={Console} />
-            <Route path="/about" component={About} />
-          </Container>
-        </Box>
-      </Router>
+      <NotificationProvider>
+        <Router hook={useHashLocation}>
+          <Box sx={{ flexGrow: 1 }}>
+            <AppBar position="static">
+              <Toolbar>
+                <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                  $ERIS Token Official GUI Miner
+                </Typography>
+              </Toolbar>
+            </AppBar>
+            <NavigationTabs />
+            <Container maxWidth="lg" sx={{ mt: 3, mb: 3 }}>
+              <Route path="/" component={Home} />
+              <Route path="/stats" component={Stats} />
+              <Route path="/settings" component={Settings} />
+              <Route path="/rpcs" component={RpcManagement} />
+              <Route path="/console" component={Console} />
+              <Route path="/about" component={About} />
+            </Container>
+          </Box>
+        </Router>
+      </NotificationProvider>
     </ThemeProvider>
   );
 }

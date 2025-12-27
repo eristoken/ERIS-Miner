@@ -8,18 +8,15 @@ import {
   Grid,
   Paper,
   CircularProgress,
-  Snackbar,
-  Alert,
-  Dialog,
-  DialogContent,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import { Miner } from '../lib/miner';
 import { RpcManager } from '../lib/rpcManager';
-import { Settings, MiningStats, Chain, RewardTier } from '../types';
+import { Settings, MiningStats, Chain } from '../types';
 import { addLog } from './Console';
-import Enigma23Jackpot from '../components/Enigma23Jackpot';
+import { showGlobalTierNotification, showGlobalJackpot, showGlobalToast } from '../lib/globalNotifications';
+import { setSharedMinerRef } from '../contexts/NotificationContext';
 // @ts-ignore - Image import
 import erisBanner from '../../eris_app_banner.png';
 
@@ -34,55 +31,38 @@ const dismissedErrors = new Set<string>();
 export default function Home() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [chains, setChains] = useState<Record<string, Chain>>({});
-  const [stats, setStats] = useState<MiningStats>({
-    hashesPerSecond: 0,
-    totalHashes: 0,
-    solutionsFound: 0,
-    tokensMinted: 0,
-    failedSolutions: 0,
-    pendingSolutions: 0,
-    currentChallenge: '0x',
-    currentDifficulty: '0',
-    currentReward: '0',
-    isMining: false,
-    solutionFound: false,
-    isSubmitting: false,
-    errorMessage: null,
-    lastTier: null,
-    enigma23Count: 0,
-    erisFavorCount: 0,
-    discordianBlessingCount: 0,
-    discordantMineCount: 0,
-    neutralMineCount: 0,
-  });
+  
+  // Initialize stats from shared miner if it exists (mining continues across navigation)
+  const getInitialStats = (): MiningStats => {
+    if (sharedMiner) {
+      return sharedMiner.getStats();
+    }
+    return {
+      hashesPerSecond: 0,
+      totalHashes: 0,
+      solutionsFound: 0,
+      tokensMinted: 0,
+      failedSolutions: 0,
+      pendingSolutions: 0,
+      currentChallenge: '0x',
+      currentDifficulty: '0',
+      currentReward: '0',
+      isMining: false,
+      solutionFound: false,
+      isSubmitting: false,
+      errorMessage: null,
+      lastTier: null,
+      enigma23Count: 0,
+      erisFavorCount: 0,
+      discordianBlessingCount: 0,
+      discordantMineCount: 0,
+      neutralMineCount: 0,
+    };
+  };
+  
+  const [stats, setStats] = useState<MiningStats>(getInitialStats());
   const [miner, setMiner] = useState<Miner | null>(sharedMiner);
   const [loading, setLoading] = useState(true);
-  
-  // Toast state
-  const [toast, setToast] = useState<{
-    open: boolean;
-    message: string;
-    severity: 'success' | 'error' | 'info' | 'warning';
-  }>({
-    open: false,
-    message: '',
-    severity: 'info',
-  });
-  
-  // Tier notification state
-  const [tierNotification, setTierNotification] = useState<{
-    open: boolean;
-    tier: RewardTier;
-    reward: string;
-  }>({
-    open: false,
-    tier: null,
-    reward: '0',
-  });
-
-  // Enigma23 Jackpot state
-  const [showJackpot, setShowJackpot] = useState(false);
-  const [jackpotReward, setJackpotReward] = useState('0');
   
   // Track previous stats to detect changes for toasts
   const [prevStats, setPrevStats] = useState<MiningStats | null>(null);
@@ -116,7 +96,17 @@ export default function Home() {
   useEffect(() => {
     loadSettings();
     
-    // Clear error when component unmounts (navigating away)
+    // If shared miner already exists (mining is running), sync stats immediately
+    // This ensures the UI reflects the actual mining state when navigating back to this tab
+    if (sharedMiner) {
+      const currentStats = sharedMiner.getStats();
+      setStats(currentStats);
+      setMiner(sharedMiner);
+    }
+    
+    // Cleanup when component unmounts (navigating away)
+    // Note: Mining continues in the background - we only clear the error message
+    // The shared miner instance persists across navigation, so mining is not interrupted
     return () => {
       if (sharedMiner) {
         const currentStats = sharedMiner.getStats();
@@ -124,6 +114,7 @@ export default function Home() {
           clearErrorMessage(currentStats.errorMessage);
         }
       }
+      // Mining continues running - callbacks are lost but will be rebound when component remounts
     };
   }, []);
 
@@ -137,16 +128,9 @@ export default function Home() {
       return;
     }
     
-    // Submitting toast
-    if (stats.isSubmitting && prevStats && !prevStats.isSubmitting) {
-      setToast({
-        open: true,
-        message: '⏳ Submitting solution to blockchain...',
-        severity: 'info',
-      });
-    }
-    
     // Error toast - show if it's a new error message that hasn't been dismissed
+    // Note: Submission notifications are now handled globally in NotificationContext
+    // Use global notifications so it shows on any tab
     if (stats.errorMessage) {
       // Show if:
       // 1. The error message changed from previous stats (new error occurred)
@@ -155,11 +139,9 @@ export default function Home() {
       const notDismissed = !dismissedErrors.has(stats.errorMessage);
       
       if (isNewError && notDismissed) {
-        setToast({
-          open: true,
-          message: `⚠️ ${stats.errorMessage}`,
-          severity: 'error',
-        });
+        showGlobalToast(`⚠️ ${stats.errorMessage}`, 'error');
+        // Mark error as dismissed when toast is shown (will be cleared when user closes toast)
+        // The error will be cleared when the toast is closed via the NotificationContext
       }
     }
     
@@ -203,6 +185,7 @@ export default function Home() {
     if (!settings) return;
 
     // Reuse existing shared instances if they exist
+    // These persist across navigation, so mining continues even when user navigates to other tabs
     if (!sharedRpcManager) {
       sharedRpcManager = new RpcManager(
         settings.rpc_rate_limit_ms,
@@ -218,23 +201,20 @@ export default function Home() {
     }
 
     // Always (re)bind callbacks so the current Home instance receives updates
+    // When navigating back to this tab, callbacks are rebound to update the UI
+    // Mining continues in the background regardless of which tab is active
     sharedMiner.setOnStatsUpdate((updatedStats) => {
       setStats(updatedStats);
     });
 
-    // Set up tier update callback
+    // Set up tier update callback - use global notifications so they show on any tab
     sharedMiner.setOnTierUpdate((tier, reward) => {
       if (tier === 'Enigma23') {
         // Show special jackpot animation
-        setJackpotReward(reward);
-        setShowJackpot(true);
+        showGlobalJackpot(reward);
       } else {
         // Show regular tier notification
-        setTierNotification({
-          open: true,
-          tier,
-          reward,
-        });
+        showGlobalTierNotification(tier, reward);
       }
     });
 
@@ -266,6 +246,9 @@ export default function Home() {
     }
 
     setMiner(sharedMiner);
+    
+    // Register shared miner with notification context for error clearing
+    setSharedMinerRef(sharedMiner);
   };
 
   const handleStartStop = async () => {
@@ -312,94 +295,6 @@ export default function Home() {
 
   return (
       <Box>
-        {/* Toast Notifications */}
-        <Snackbar
-          open={toast.open}
-          autoHideDuration={stats.errorMessage ? 6000 : 3000}
-          onClose={() => {
-            setToast({ ...toast, open: false });
-            // Clear error when toast is closed (user dismissed it)
-            if (toast.severity === 'error' && stats.errorMessage) {
-              clearErrorMessage(stats.errorMessage);
-            }
-          }}
-          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-          sx={{ maxWidth: '90vw' }}
-        >
-          <Alert
-            onClose={() => {
-              setToast({ ...toast, open: false });
-              // Clear error when toast is closed (user clicked X)
-              if (toast.severity === 'error' && stats.errorMessage) {
-                clearErrorMessage(stats.errorMessage);
-              }
-            }}
-            severity={toast.severity}
-            sx={{ 
-              width: '100%',
-              maxWidth: '90vw',
-              wordBreak: 'break-word',
-              whiteSpace: 'pre-wrap',
-              '& .MuiAlert-message': {
-                overflowWrap: 'break-word',
-                wordBreak: 'break-word',
-              }
-            }}
-          >
-            {toast.message}
-          </Alert>
-        </Snackbar>
-
-        {/* Tier Notification */}
-        <Snackbar
-          open={tierNotification.open}
-          autoHideDuration={5000}
-          onClose={() => setTierNotification({ ...tierNotification, open: false })}
-          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        >
-          <Alert
-            onClose={() => setTierNotification({ ...tierNotification, open: false })}
-            severity="success"
-            sx={{ 
-              width: '100%',
-              fontSize: '1.1rem',
-              fontWeight: 'bold',
-            }}
-          >
-            {tierNotification.tier === 'ErisFavor' && '⭐ '}
-            {tierNotification.tier === 'DiscordianBlessing' && '✨ '}
-            {tierNotification.tier === 'DiscordantMine' && '⚡ '}
-            {tierNotification.tier === 'NeutralMine' && '⚪ '}
-            {tierNotification.tier === 'ErisFavor' ? 'Eris Favor' :
-             tierNotification.tier === 'DiscordianBlessing' ? 'Discordian Blessing' :
-             tierNotification.tier === 'DiscordantMine' ? 'Discordant Mine' :
-             tierNotification.tier === 'NeutralMine' ? 'Neutral Mine' :
-             'Tier'} Tier Awarded! Reward: {tierNotification.reward} tokens
-          </Alert>
-        </Snackbar>
-
-        {/* Enigma23 Jackpot Dialog */}
-        <Dialog
-          open={showJackpot}
-          onClose={() => setShowJackpot(false)}
-          maxWidth="md"
-          fullWidth
-          PaperProps={{
-            sx: {
-              background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
-              border: '3px solid gold',
-              boxShadow: '0 0 30px rgba(255, 215, 0, 0.5)',
-            }
-          }}
-        >
-          <DialogContent sx={{ p: 0 }}>
-            <Enigma23Jackpot 
-              reward={jackpotReward}
-              onClose={() => setShowJackpot(false)}
-            />
-          </DialogContent>
-        </Dialog>
-        
         <Grid container spacing={3}>
         <Grid item xs={12}>
           {/* Banner Image Container with Cards */}
