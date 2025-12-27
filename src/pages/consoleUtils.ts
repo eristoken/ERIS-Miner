@@ -21,3 +21,8 @@ export function subscribeToLogs(callback: (logs: LogEntry[]) => void) {
   };
 }
 
+export function clearLogs() {
+  globalLogs = [];
+  logListeners.forEach((listener) => listener([]));
+}
+

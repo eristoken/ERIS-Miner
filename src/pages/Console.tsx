@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import ClearIcon from '@mui/icons-material/Clear';
 import { LogEntry } from '../types';
-import { subscribeToLogs } from './consoleUtils';
+import { subscribeToLogs, clearLogs } from './consoleUtils';
 
 export default function Console() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -31,9 +31,8 @@ export default function Console() {
   }, [logs]);
 
   const handleClear = () => {
-    globalLogs = [];
+    clearLogs();
     setLogs([]);
-    logListeners.forEach((listener) => listener([]));
   };
 
   const getLogColor = (level: LogEntry['level']) => {
