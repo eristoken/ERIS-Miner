@@ -114,10 +114,6 @@ Chains are defined in `chains.json`. The default configuration includes:
 - Arbitrum One (42161)
 - Polygon (137)
 - BNB Chain (56)
-- Ink (57073)
-- Unichain (130)
-- World Chain (480)
-- Soneium (1868)
 
 ### RPC Endpoints
 
