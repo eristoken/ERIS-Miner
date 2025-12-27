@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Card,
@@ -27,6 +27,9 @@ import erisBanner from '../../eris_app_banner.png';
 // across route/tab changes.
 let sharedMiner: Miner | null = null;
 let sharedRpcManager: RpcManager | null = null;
+
+// Track dismissed error messages across component remounts
+const dismissedErrors = new Set<string>();
 
 export default function Home() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -82,16 +85,60 @@ export default function Home() {
   const [jackpotReward, setJackpotReward] = useState('0');
   
   // Track previous stats to detect changes for toasts
-  const [prevStats, setPrevStats] = useState<MiningStats>(stats);
+  const [prevStats, setPrevStats] = useState<MiningStats | null>(null);
+  
+  // Track if this is the first render after mount
+  const isFirstRender = useRef(true);
+
+  // Function to clear error message from miner and mark as dismissed
+  const clearErrorMessage = (errorMessage?: string) => {
+    const messageToClear = errorMessage || (sharedMiner?.getStats().errorMessage || null);
+    
+    if (messageToClear) {
+      // Mark this error as dismissed
+      dismissedErrors.add(messageToClear);
+    }
+    
+    if (sharedMiner) {
+      const currentStats = sharedMiner.getStats();
+      if (currentStats.errorMessage) {
+        currentStats.errorMessage = null;
+        // Trigger stats update to reflect the cleared error
+        // Access the private callback using type assertion
+        const minerWithCallback = sharedMiner as any;
+        if (minerWithCallback.onStatsUpdate) {
+          minerWithCallback.onStatsUpdate({ ...currentStats });
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     loadSettings();
+    
+    // Clear error when component unmounts (navigating away)
+    return () => {
+      if (sharedMiner) {
+        const currentStats = sharedMiner.getStats();
+        if (currentStats.errorMessage) {
+          clearErrorMessage(currentStats.errorMessage);
+        }
+      }
+    };
   }, []);
 
   // Handle toast notifications for stats changes
   useEffect(() => {
+    // Initialize prevStats on first render
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      setPrevStats(stats);
+      // Don't show errors on first render - they're likely stale from navigation
+      return;
+    }
+    
     // Submitting toast
-    if (stats.isSubmitting && !prevStats.isSubmitting) {
+    if (stats.isSubmitting && prevStats && !prevStats.isSubmitting) {
       setToast({
         open: true,
         message: '⏳ Submitting solution to blockchain...',
@@ -99,13 +146,26 @@ export default function Home() {
       });
     }
     
-    // Error toast
-    if (stats.errorMessage && stats.errorMessage !== prevStats.errorMessage) {
-      setToast({
-        open: true,
-        message: `⚠️ ${stats.errorMessage}`,
-        severity: 'error',
-      });
+    // Error toast - show if it's a new error message that hasn't been dismissed
+    if (stats.errorMessage) {
+      // Show if:
+      // 1. The error message changed from previous stats (new error occurred)
+      // 2. AND this error hasn't been dismissed by the user
+      const isNewError = prevStats && stats.errorMessage !== prevStats.errorMessage;
+      const notDismissed = !dismissedErrors.has(stats.errorMessage);
+      
+      if (isNewError && notDismissed) {
+        setToast({
+          open: true,
+          message: `⚠️ ${stats.errorMessage}`,
+          severity: 'error',
+        });
+      }
+    }
+    
+    // Remove from dismissed set when error is resolved (so new occurrences can show)
+    if (!stats.errorMessage && prevStats && prevStats.errorMessage) {
+      dismissedErrors.delete(prevStats.errorMessage);
     }
     
     setPrevStats(stats);
@@ -256,13 +316,35 @@ export default function Home() {
         <Snackbar
           open={toast.open}
           autoHideDuration={stats.errorMessage ? 6000 : 3000}
-          onClose={() => setToast({ ...toast, open: false })}
+          onClose={() => {
+            setToast({ ...toast, open: false });
+            // Clear error when toast is closed (user dismissed it)
+            if (toast.severity === 'error' && stats.errorMessage) {
+              clearErrorMessage(stats.errorMessage);
+            }
+          }}
           anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+          sx={{ maxWidth: '90vw' }}
         >
           <Alert
-            onClose={() => setToast({ ...toast, open: false })}
+            onClose={() => {
+              setToast({ ...toast, open: false });
+              // Clear error when toast is closed (user clicked X)
+              if (toast.severity === 'error' && stats.errorMessage) {
+                clearErrorMessage(stats.errorMessage);
+              }
+            }}
             severity={toast.severity}
-            sx={{ width: '100%' }}
+            sx={{ 
+              width: '100%',
+              maxWidth: '90vw',
+              wordBreak: 'break-word',
+              whiteSpace: 'pre-wrap',
+              '& .MuiAlert-message': {
+                overflowWrap: 'break-word',
+                wordBreak: 'break-word',
+              }
+            }}
           >
             {toast.message}
           </Alert>

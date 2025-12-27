@@ -300,23 +300,54 @@ export class Miner {
         gasLimit = (estimatedGas * BigInt(120)) / BigInt(100);
         this.log('info', `Estimated gas: ${estimatedGas.toString()}, Using: ${gasLimit.toString()} (with 20% buffer)`);
       } catch (error: any) {
-        // Check if error is "Already rewarded in this block" - this means solution is invalid
-        const errorMsg = (error.message || '').toLowerCase();
+        // Extract error message from various possible locations
+        const errorMsg = (
+          error.message || 
+          error.reason || 
+          (error.revert && error.revert.args && error.revert.args[0]) ||
+          ''
+        ).toLowerCase();
+        
+        // Check for "Already rewarded in this block" - this means solution is invalid
         if (errorMsg.includes('already rewarded') || errorMsg.includes('already rewarded in this block')) {
           this.log('warn', 'Solution already submitted in this block by another miner, skipping...');
           return false; // Skip this solution, continue mining
         }
         
-        // Check if error is "Digest exceeds target" - solution is invalid (stale challenge or wrong hash)
+        // Check for "Digest exceeds target" - solution is invalid (stale challenge or wrong hash)
         if (errorMsg.includes('digest exceeds target')) {
           this.log('warn', 'Solution digest exceeds target (likely stale challenge), skipping...');
           return false; // Skip this solution, continue mining
         }
         
+        // Check for "Mining not started yet" - chain-level issue, stop mining
+        if (errorMsg.includes('mining not started yet')) {
+          // Try to get the chain name for a better error message
+          let chainName = `Chain ${this.settings.selected_chain_id}`;
+          try {
+            const chains = await window.electronAPI.readChains();
+            if (chains && chains[this.settings.selected_chain_id]) {
+              chainName = chains[this.settings.selected_chain_id].name;
+            }
+          } catch (e) {
+            // Fall back to chain ID if we can't load chains
+          }
+          const userFriendlyMsg = `Mining has not started yet for ${chainName}. Please wait for mining to be enabled on the contract.`;
+          this.log('error', userFriendlyMsg);
+          this.stats.errorMessage = userFriendlyMsg;
+          if (this.onStatsUpdate) {
+            this.onStatsUpdate({ ...this.stats });
+          }
+          // Stop mining on this error
+          this.log('error', 'Stopping miner due to mining not started error');
+          await this.stop();
+          return false;
+        }
+        
         // If estimation fails for other reasons, use configured gas limit (default 200000 from MVis-tokenminer)
         const configuredLimit = BigInt(this.settings.gas_limit || 200000);
         gasLimit = configuredLimit;
-        this.log('warn', `Gas estimation failed: ${error.message}, using configured limit: ${gasLimit.toString()}`);
+        this.log('warn', `Gas estimation failed: ${error.message || error.reason || 'unknown error'}, using configured limit: ${gasLimit.toString()}`);
       }
 
       // Ensure gas limit is at least a safe minimum (100000) to prevent "intrinsic gas too low" errors
@@ -521,7 +552,13 @@ export class Miner {
 
       return true;
     } catch (error: any) {
-      const errorMessage = (error.message || '').toLowerCase();
+      // Extract error message from various possible locations
+      const errorMessage = (
+        error.message || 
+        error.reason || 
+        (error.revert && error.revert.args && error.revert.args[0]) ||
+        ''
+      ).toLowerCase();
       
       // Check for "Already rewarded in this block" - this is expected and should be skipped
       if (errorMessage.includes('already rewarded') || errorMessage.includes('already rewarded in this block')) {
@@ -533,6 +570,30 @@ export class Miner {
       if (errorMessage.includes('digest exceeds target')) {
         this.log('warn', 'Solution digest exceeds target (likely stale challenge), skipping...');
         return false; // Skip this solution, continue mining
+      }
+      
+      // Check for "Mining not started yet" - chain-level issue, stop mining
+      if (errorMessage.includes('mining not started yet')) {
+        // Try to get the chain name for a better error message
+        let chainName = `Chain ${this.settings.selected_chain_id}`;
+        try {
+          const chains = await window.electronAPI.readChains();
+          if (chains && chains[this.settings.selected_chain_id]) {
+            chainName = chains[this.settings.selected_chain_id].name;
+          }
+        } catch (e) {
+          // Fall back to chain ID if we can't load chains
+        }
+        const userFriendlyMsg = `Mining has not started yet for ${chainName}. Please wait for mining to be enabled on the contract.`;
+        this.log('error', userFriendlyMsg);
+        this.stats.errorMessage = userFriendlyMsg;
+        if (this.onStatsUpdate) {
+          this.onStatsUpdate({ ...this.stats });
+        }
+        // Stop mining on this error
+        this.log('error', 'Stopping miner due to mining not started error');
+        await this.stop();
+        return false;
       }
       
       // Check if error is due to RPC rate limiting/throttling
@@ -559,7 +620,7 @@ export class Miner {
       }
       
       // Non-RPC error or RPC switch failed - stop miner and show notification
-      const errorMsg = `Failed to submit solution: ${error.message}`;
+      const errorMsg = `Failed to submit solution: ${error.message || error.reason || 'unknown error'}`;
       this.log('error', errorMsg);
       this.stats.errorMessage = errorMsg;
       if (this.onStatsUpdate) {
