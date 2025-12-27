@@ -14,10 +14,9 @@ import StopIcon from '@mui/icons-material/Stop';
 import { Miner } from '../lib/miner';
 import { RpcManager } from '../lib/rpcManager';
 import { Settings, MiningStats, Chain } from '../types';
-import { addLog } from './Console';
+import { addLog } from './consoleUtils';
 import { showGlobalTierNotification, showGlobalJackpot, showGlobalToast } from '../lib/globalNotifications';
-import { setSharedMinerRef } from '../contexts/NotificationContext';
-// @ts-ignore - Image import
+import { setSharedMinerRef } from '../contexts/sharedMinerRef';
 import erisBanner from '../../eris_app_banner.png';
 
 // Shared miner and RPC manager instances so mining state persists
@@ -85,6 +84,7 @@ export default function Home() {
         currentStats.errorMessage = null;
         // Trigger stats update to reflect the cleared error
         // Access the private callback using type assertion
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const minerWithCallback = sharedMiner as any;
         if (minerWithCallback.onStatsUpdate) {
           minerWithCallback.onStatsUpdate({ ...currentStats });

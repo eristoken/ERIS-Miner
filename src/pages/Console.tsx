@@ -10,27 +10,7 @@ import {
 } from '@mui/material';
 import ClearIcon from '@mui/icons-material/Clear';
 import { LogEntry } from '../types';
-
-// Global log storage (shared across components)
-let globalLogs: LogEntry[] = [];
-let logListeners: ((logs: LogEntry[]) => void)[] = [];
-
-export function addLog(entry: LogEntry) {
-  globalLogs.push(entry);
-  // Keep only last 1000 entries
-  if (globalLogs.length > 1000) {
-    globalLogs = globalLogs.slice(-1000);
-  }
-  logListeners.forEach((listener) => listener([...globalLogs]));
-}
-
-export function subscribeToLogs(callback: (logs: LogEntry[]) => void) {
-  logListeners.push(callback);
-  callback([...globalLogs]);
-  return () => {
-    logListeners = logListeners.filter((l) => l !== callback);
-  };
-}
+import { subscribeToLogs } from './consoleUtils';
 
 export default function Console() {
   const [logs, setLogs] = useState<LogEntry[]>([]);

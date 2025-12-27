@@ -363,6 +363,7 @@ ipcMain.handle('read-settings', () => {
     }
     
     return settings;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error(`Failed to read settings: ${error.message}`);
     console.error(`Settings file path: ${SETTINGS_FILE}`);
@@ -370,6 +371,7 @@ ipcMain.handle('read-settings', () => {
   }
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ipcMain.handle('write-settings', (_event: Electron.IpcMainInvokeEvent, settings: any) => {
   try {
     // Ensure paths are initialized
@@ -379,6 +381,7 @@ ipcMain.handle('write-settings', (_event: Electron.IpcMainInvokeEvent, settings:
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
     console.log(`Settings written to: ${SETTINGS_FILE}`);
     return true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error(`Failed to write settings: ${error.message}`);
     console.error(`Settings file path: ${SETTINGS_FILE}`);
@@ -404,6 +407,7 @@ ipcMain.handle('read-chains', () => {
   }
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ipcMain.handle('write-chains', (_event: Electron.IpcMainInvokeEvent, chains: any) => {
   try {
     // Ensure paths are initialized
@@ -412,6 +416,7 @@ ipcMain.handle('write-chains', (_event: Electron.IpcMainInvokeEvent, chains: any
     }
     fs.writeFileSync(CHAINS_FILE, JSON.stringify(chains, null, 2), 'utf-8');
     return true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error(`Failed to write chains: ${error.message}`);
     return false;
@@ -436,6 +441,7 @@ ipcMain.handle('read-rpcs', () => {
   }
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ipcMain.handle('write-rpcs', (_event: Electron.IpcMainInvokeEvent, rpcs: any) => {
   try {
     // Ensure paths are initialized
@@ -444,6 +450,7 @@ ipcMain.handle('write-rpcs', (_event: Electron.IpcMainInvokeEvent, rpcs: any) =>
     }
     fs.writeFileSync(RPCS_FILE, JSON.stringify(rpcs, null, 2), 'utf-8');
     return true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error(`Failed to write RPCs: ${error.message}`);
     return false;
@@ -462,6 +469,7 @@ ipcMain.handle('read-contracts', () => {
     }
     const data = fs.readFileSync(CONTRACTS_FILE, 'utf-8');
     return JSON.parse(data);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error(`Failed to read contracts: ${error.message}`);
     console.error(`Contracts file path: ${CONTRACTS_FILE}`);
@@ -473,6 +481,7 @@ ipcMain.handle('open-external', (_event: Electron.IpcMainInvokeEvent, url: strin
   try {
     shell.openExternal(url);
     return true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error(`Failed to open external URL: ${error.message}`);
     return false;

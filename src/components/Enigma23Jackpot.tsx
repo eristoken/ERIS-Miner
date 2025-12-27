@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Typography, Button } from '@mui/material';
-// @ts-ignore - Audio file import
+// @ts-expect-error - Audio file import
 import fanfareSound from './main-library-super-fanfare-276484.mp3';
 
 interface Enigma23JackpotProps {

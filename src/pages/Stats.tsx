@@ -73,15 +73,6 @@ export default function Stats() {
     }
   };
 
-  const getContractAddress = async (): Promise<string> => {
-    if (!settings) throw new Error('Settings not loaded');
-    const contracts = await window.electronAPI.readContracts();
-    if (!contracts) {
-      throw new Error('Failed to load contracts.json');
-    }
-    return contracts[settings.network_type].address;
-  };
-
   const fetchStats = useCallback(async () => {
     if (!settings) return;
 
@@ -89,6 +80,15 @@ export default function Stats() {
     setError(null);
 
     try {
+      const getContractAddress = async (): Promise<string> => {
+        if (!settings) throw new Error('Settings not loaded');
+        const contracts = await window.electronAPI.readContracts();
+        if (!contracts) {
+          throw new Error('Failed to load contracts.json');
+        }
+        return contracts[settings.network_type].address;
+      };
+
       const chainRpcs = await window.electronAPI.readRpcs();
       if (!chainRpcs || !chainRpcs[settings.selected_chain_id]) {
         throw new Error(`No RPCs configured for chain ${settings.selected_chain_id}`);
@@ -146,9 +146,10 @@ export default function Stats() {
       });
 
       setLeaderboard(leaderboardData);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to fetch stats:', error);
-      setError(`Failed to fetch stats: ${error.message}`);
+      setError(`Failed to fetch stats: ${errorMessage}`);
     } finally {
       setRefreshing(false);
     }

@@ -24,7 +24,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
 import { Chain, RpcEndpoint } from '../types';
-import { addLog } from './Console';
+import { addLog } from './consoleUtils';
 
 export default function RpcManagement() {
   const [chains, setChains] = useState<Record<string, Chain>>({});
@@ -66,6 +66,7 @@ export default function RpcManagement() {
           message: 'RPCs loaded from rpcs.json',
         });
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const msg = `Failed to load data: ${err.message}`;
       setError(msg);
@@ -149,6 +150,7 @@ export default function RpcManagement() {
           message: msg,
         });
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const msg = `Failed to save: ${err.message}`;
       setError(msg);

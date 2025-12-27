@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ethers } from 'ethers';
 import { RpcManager } from './rpcManager';
 import { Settings, MiningStats, RpcEndpoint, LogEntry, RewardTier } from '../types';
-import { addLog } from '../pages/Console';
+import { addLog } from '../pages/consoleUtils';
 import ERC918_ABI from '../../abi.json';
 
 export class Miner {
