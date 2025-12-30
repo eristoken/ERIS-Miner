@@ -374,7 +374,23 @@ jobs:
       - name: Determine version for artifacts
         id: version
         run: |
-          echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          # Try to get version from package.json, fallback to commit hash
+          if [ -f package.json ]; then
+            PKG_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+            if [ -n "$PKG_VERSION" ] && [ "$PKG_VERSION" != "null" ]; then
+              echo "version=$PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "version_display=Version: $PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "Using version from package.json: $PKG_VERSION"
+            else
+              echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "Falling back to commit hash: ${GITHUB_SHA:0:7}"
+            fi
+          else
+            echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "package.json not found, using commit hash: ${GITHUB_SHA:0:7}"
+          fi
       
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -432,8 +448,34 @@ jobs:
         id: version
         shell: pwsh
         run: |
+          # Try to get version from package.json, fallback to commit hash
           $sha = "${{ github.sha }}"
-          Write-Output "version=$($sha.Substring(0, 7))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if (Test-Path package.json) {
+            try {
+              $packageJson = Get-Content package.json | ConvertFrom-Json
+              if ($packageJson.version -and $packageJson.version -ne "null") {
+                $version = $packageJson.version
+                Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+                Write-Output "version_display=Version: $version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+                Write-Host "Using version from package.json: $version"
+              } else {
+                $commitHash = $sha.Substring(0, 7)
+                Write-Output "version=$commitHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+                Write-Output "version_display=$commitHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+                Write-Host "Falling back to commit hash: $commitHash"
+              }
+            } catch {
+              $commitHash = $sha.Substring(0, 7)
+              Write-Output "version=$commitHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+              Write-Output "version_display=$commitHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+              Write-Host "Error reading package.json, using commit hash: $commitHash"
+            }
+          } else {
+            $commitHash = $sha.Substring(0, 7)
+            Write-Output "version=$commitHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Output "version_display=$commitHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "package.json not found, using commit hash: $commitHash"
+          }
       
       - name: List output directory structure
         shell: pwsh
@@ -443,10 +485,10 @@ jobs:
       
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
           path: out/make/**/*.msi
-          if-no-files-found: warn
           retention-days: 30
 
   publish-release:
@@ -463,21 +505,37 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          # Try to get version from package.json, fallback to commit hash
+          if [ -f package.json ]; then
+            PKG_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+            if [ -n "$PKG_VERSION" ] && [ "$PKG_VERSION" != "null" ]; then
+              echo "version=$PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "version_display=Version: $PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "Using version from package.json: $PKG_VERSION"
+            else
+              echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "Falling back to commit hash: ${GITHUB_SHA:0:7}"
+            fi
+          else
+            echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "package.json not found, using commit hash: ${GITHUB_SHA:0:7}"
+          fi
       
       - name: Download macOS DMG artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: eris-miner-macos-dmg-${{ steps.version.outputs.version }}
           path: ./artifacts/macos
-          if-no-files-found: warn
       
       - name: Download Windows MSI artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
           path: ./artifacts/windows
-          if-no-files-found: warn
       
       - name: Verify artifacts are extracted
         run: |
@@ -491,9 +549,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          name: Release ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version_display || steps.version.outputs.version }}
           body: |
-            ## ERIS Miner ${{ steps.version.outputs.version }}
+            ## ERIS Miner ${{ steps.version.outputs.version_display || steps.version.outputs.version }}
             
             Automated release from commit ${{ github.sha }}
             
