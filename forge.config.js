@@ -40,7 +40,7 @@ const config = {
           base: 'org.electronjs.Electron2.BaseApp',
           baseVersion: '24.08',
           icon: {
-            '256x256': './org.eristoken.miner.png',
+            '512x512': './org.eristoken.miner.png',
           },
           desktopFile: './org.eristoken.miner.desktop',
           modules: [],
