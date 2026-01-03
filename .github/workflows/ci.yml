@@ -46,6 +46,12 @@ jobs:
     permissions:
       contents: read
       actions: read
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     
     steps:
       - name: Checkout code
@@ -67,10 +73,7 @@ jobs:
         run: npm ci
       
       - name: Import Apple Certificate
-        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        if: env.APPLE_CERTIFICATE != ''
         run: |
           echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p "$APPLE_CERTIFICATE_PASSWORD" build.keychain
@@ -96,10 +99,6 @@ jobs:
           rm certificate.p12
       
       - name: Configure code signing (if credentials available)
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # forge.config.js reads from environment variables
           # Check if APPLE_SIGNING_IDENTITY was set from previous step (extracted from certificate)
@@ -139,11 +138,6 @@ jobs:
           fi
       
       - name: Package for macOS
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # Debug: Check if notarization env vars are set
           echo "=== Checking notarization configuration ==="
@@ -213,10 +207,6 @@ jobs:
       
       - name: Verify code signing and notarization (if enabled)
         if: env.CODE_SIGNING_ENABLED == 'true'
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # Verify the app is properly signed
           # The .app bundle might be in out/ERIS-Miner-darwin-*/ or we need to extract from DMG
@@ -405,6 +395,9 @@ jobs:
     permissions:
       contents: read
       actions: read
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     
     steps:
       - name: Checkout code
@@ -426,10 +419,7 @@ jobs:
         run: npm ci
       
       - name: Configure Windows code signing (if certificate available)
-        if: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        if: env.WINDOWS_CERTIFICATE != ''
         shell: pwsh
         run: |
           $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
