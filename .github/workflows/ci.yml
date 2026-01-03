@@ -67,7 +67,7 @@ jobs:
         run: npm ci
       
       - name: Import Apple Certificate
-        if: env.APPLE_CERTIFICATE != ''
+        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -426,7 +426,7 @@ jobs:
         run: npm ci
       
       - name: Configure Windows code signing (if certificate available)
-        if: env.WINDOWS_CERTIFICATE != ''
+        if: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
