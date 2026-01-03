@@ -87,6 +87,30 @@ npm run make:linux   # Linux (for Flatpak bundling)
 
 See [PACKAGING.md](./PACKAGING.md) for detailed packaging instructions and GitHub Actions workflows.
 
+## Linux Flatpak Installation
+
+### Installing from GitHub Releases
+
+1. Download the Flatpak file for your architecture:
+   - `org.eristoken.miner_stable_x86_64.flatpak` for x64 systems
+   - `org.eristoken.miner_stable_aarch64.flatpak` for ARM64 systems (Raspberry Pi)
+
+2. Install the Flatpak:
+```bash
+flatpak install --user ./org.eristoken.miner_stable_*.flatpak
+```
+
+3. Run the application:
+   - **From desktop menu**: Click on "ERIS Miner" in your application menu
+   - **From command line**: 
+```bash
+flatpak run --command=eris-miner-launcher org.eristoken.miner
+```
+
+### Raspberry Pi Notes
+
+On Raspberry Pi and other ARM64 Linux systems, the application requires X11 mode. When launching from the command line, use the `eris-miner-launcher` command as shown above. Desktop menu launches will automatically use the correct settings.
+
 ## CI/CD
 
 The project uses GitHub Actions for automated building and releases:
