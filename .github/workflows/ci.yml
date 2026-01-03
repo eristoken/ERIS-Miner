@@ -509,8 +509,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder elfutils
           flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-          flatpak --user install -y flathub org.electronjs.Electron2.BaseApp//25.08
+          flatpak --user install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+          flatpak --user install -y flathub org.electronjs.Electron2.BaseApp//24.08
       
       - name: Install dependencies
         run: npm ci
@@ -524,9 +524,9 @@ jobs:
           flatpak search org.electronjs.Electron2.BaseApp || true
       
       - name: Package for Linux (x64)
-        run: DEBUG=electron-forge:* npm run make:linux
+        run: DEBUG=electron-forge:*,@malept/flatpak-bundler npm run make:linux 2>&1 || (echo "Build failed, checking for flatpak errors..." && cat /tmp/flatpak-builder-* 2>/dev/null || true && exit 1)
         env:
-          DEBUG: electron-forge:*
+          DEBUG: electron-forge:*,@malept/flatpak-bundler
       
       - name: List output directory
         run: |
@@ -589,8 +589,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder elfutils
           flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-          flatpak --user install -y flathub org.electronjs.Electron2.BaseApp//25.08
+          flatpak --user install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+          flatpak --user install -y flathub org.electronjs.Electron2.BaseApp//24.08
       
       - name: Install dependencies
         run: npm ci
@@ -604,9 +604,9 @@ jobs:
           flatpak search org.electronjs.Electron2.BaseApp || true
       
       - name: Package for Linux (arm64)
-        run: DEBUG=electron-forge:* npm run make:linux-arm64
+        run: DEBUG=electron-forge:*,@malept/flatpak-bundler npm run make:linux-arm64 2>&1 || (echo "Build failed, checking for flatpak errors..." && cat /tmp/flatpak-builder-* 2>/dev/null || true && exit 1)
         env:
-          DEBUG: electron-forge:*
+          DEBUG: electron-forge:*,@malept/flatpak-bundler
       
       - name: List output directory
         run: |
