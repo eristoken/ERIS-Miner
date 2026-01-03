@@ -470,6 +470,7 @@ function createWindow() {
   }
   
   // Final check after a delay to ensure window is visible
+  // If window reports as visible but user can't see it, likely a Wayland issue
   setTimeout(() => {
     if (mainWindow) {
       const isVisible = mainWindow.isVisible();
@@ -477,6 +478,7 @@ function createWindow() {
       const isFocused = mainWindow.isFocused();
       const [x, y] = mainWindow.getPosition();
       const [width, height] = mainWindow.getSize();
+      const sessionType = process.env.XDG_SESSION_TYPE || '';
       console.log('Window status check:');
       console.log('  Visible:', isVisible);
       console.log('  Focused:', isFocused);
@@ -484,6 +486,7 @@ function createWindow() {
       console.log('  Content loaded:', contentLoaded);
       console.log('  Position:', x, y);
       console.log('  Size:', width, height);
+      console.log('  XDG_SESSION_TYPE:', sessionType);
       
       if (!isDestroyed) {
         if (!isVisible) {
@@ -507,6 +510,31 @@ function createWindow() {
           console.log('Window is visible but not focused - focusing');
           mainWindow.focus();
           mainWindow.moveTop();
+        } else if (isVisible && sessionType.toLowerCase() === 'wayland') {
+          // Window reports visible but might not actually be showing due to Wayland
+          // Show a warning in the console
+          console.warn('⚠️  WARNING: Window reports as visible but you may not see it due to Wayland.');
+          console.warn('⚠️  If the window is not visible, please run: XDG_SESSION_TYPE=x11 eris-miner');
+          console.warn('⚠️  Or switch to an X11 session in your desktop environment.');
+          
+          // Also show a dialog after a delay if window still isn't focused
+          // Use null as parent so it shows even if main window isn't visible
+          setTimeout(() => {
+            if (mainWindow && !mainWindow.isFocused() && sessionType.toLowerCase() === 'wayland') {
+              dialog.showMessageBox(null, {
+                type: 'warning',
+                title: 'ERIS Miner - Wayland Compatibility Issue',
+                message: 'Window May Not Be Visible',
+                detail: 'You are running under Wayland. The window may not be visible.\n\n' +
+                        'SOLUTION: Run with X11:\n' +
+                        '  XDG_SESSION_TYPE=x11 eris-miner\n\n' +
+                        'Or create a desktop launcher (see console for details).',
+                buttons: ['OK'],
+              }).catch((err) => {
+                console.error('Error showing dialog:', err);
+              });
+            }
+          }, 5000); // Show after 5 seconds if window still not focused
         }
       }
     } else {

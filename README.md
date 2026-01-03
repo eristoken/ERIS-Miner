@@ -113,6 +113,13 @@ sudo apt install ./eris-miner_*_amd64.deb
 eris-miner
 ```
 
+**Note for Raspberry Pi/Wayland users**: If the window doesn't appear, you need to run with X11:
+```bash
+XDG_SESSION_TYPE=x11 eris-miner
+```
+
+Or create a desktop launcher that sets this automatically (see troubleshooting section below).
+
 ### Raspberry Pi Notes
 
 On Raspberry Pi and other ARM64 Linux systems, the application requires X11 mode. The application will automatically detect and use X11 when available.
@@ -141,19 +148,45 @@ Or create a launcher script:
 
 If the logs show "Window shown successfully" and "Visible: true" but no window appears:
 
-1. **Wayland Issue** (Most Common): If `XDG_SESSION_TYPE: wayland`, the app will automatically force X11 in future builds. For current builds, run with:
+1. **Wayland Issue** (Most Common): If `XDG_SESSION_TYPE: wayland`, you must run with X11. The app cannot automatically override this after Electron starts.
+
+   **Solution 1: Command line (temporary)**
    ```bash
    XDG_SESSION_TYPE=x11 eris-miner
    ```
-   
-   **Note**: Future builds will automatically handle this, but you can also create a launcher script:
+
+   **Solution 2: Create a launcher script (permanent)**
    ```bash
    # Create ~/eris-miner-launcher.sh
+   cat > ~/eris-miner-launcher.sh << 'EOF'
    #!/bin/bash
    XDG_SESSION_TYPE=x11 /usr/bin/eris-miner "$@"
+   EOF
    
    chmod +x ~/eris-miner-launcher.sh
+   
+   # Then run:
+   ~/eris-miner-launcher.sh
    ```
+
+   **Solution 3: Create a desktop file (for menu launcher)**
+   ```bash
+   # Create ~/.local/share/applications/eris-miner.desktop
+   cat > ~/.local/share/applications/eris-miner.desktop << 'EOF'
+   [Desktop Entry]
+   Name=ERIS Miner
+   Comment=ERC-918 Token Miner
+   Exec=env XDG_SESSION_TYPE=x11 /usr/bin/eris-miner
+   Icon=eris-miner
+   Terminal=false
+   Type=Application
+   Categories=Network;Finance;
+   EOF
+   
+   # Make it executable
+   chmod +x ~/.local/share/applications/eris-miner.desktop
+   ```
+   After creating the desktop file, you can launch "ERIS Miner" from your application menu and it will automatically use X11.
 
 2. **Window Off-Screen**: The window might be positioned off-screen:
    ```bash
