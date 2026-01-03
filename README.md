@@ -8,12 +8,14 @@ A modern, cross-platform desktop application for mining ERC-918 compliant tokens
 - **Solo Mining**: Direct contract mining with automatic solution submission
 - **Multi-Chain Support**: Configure and mine on multiple blockchain networks
 - **CPU Mining**: Multi-threaded CPU mining with configurable thread count
-- **GPU Mining**: WebGPU-accelerated mining for massively parallel hashing (10-100x faster than CPU)
+- **GPU Mining**: WebGPU-accelerated mining with pipelined batch processing for maximum GPU utilization (10-100x faster than CPU)
+- **Transaction Verification**: Automatic verification of transaction submission and detection of dropped transactions
+- **Solution Queue Management**: Intelligent queue system that prevents duplicates and manages solutions per challenge
 - **RPC Management**: Add, remove, and manage RPC endpoints with automatic failover
 - **Rate Limiting**: Configurable RPC rate limiting to prevent API throttling
 - **Auto RPC Switching**: Automatically switch to backup RPCs when rate limited
 - **Real-Time Stats**: Live mining statistics including hash rate, solutions found, and tokens minted
-- **Reward Tiers**: Track special reward tiers (Enigma23, ErisFavor, DiscordianBlessing, DiscordantMine, NeutralMine)
+- **Reward Tiers**: Track special reward tiers with automatic notifications (Enigma23, ErisFavor, DiscordianBlessing, DiscordantMine, NeutralMine)
 - **Leaderboard**: View mining statistics and rankings on the Stats page
 - **Console Logging**: Clearable console with filtered log output
 - **Modern UI**: Beautiful Material-UI interface with dark theme
@@ -82,34 +84,38 @@ npm run make
 # Create installer for specific platform
 npm run make:mac     # macOS (DMG)
 npm run make:win     # Windows (MSI)
-npm run make:linux   # Linux (for Flatpak bundling)
+npm run make:linux   # Linux (DEB package)
 ```
 
 See [PACKAGING.md](./PACKAGING.md) for detailed packaging instructions and GitHub Actions workflows.
 
-## Linux Flatpak Installation
+## Linux DEB Installation
 
 ### Installing from GitHub Releases
 
-1. Download the Flatpak file for your architecture:
-   - `org.eristoken.miner_stable_x86_64.flatpak` for x64 systems
-   - `org.eristoken.miner_stable_aarch64.flatpak` for ARM64 systems (Raspberry Pi)
+1. Download the DEB package for your architecture:
+   - `eris-miner_*_amd64.deb` for x64 systems
+   - `eris-miner_*_arm64.deb` for ARM64 systems (Raspberry Pi)
 
-2. Install the Flatpak:
+2. Install the DEB package:
 ```bash
-flatpak install --user ./org.eristoken.miner_stable_*.flatpak
+# Using dpkg
+sudo dpkg -i eris-miner_*_amd64.deb
+
+# Or using apt (will automatically resolve dependencies)
+sudo apt install ./eris-miner_*_amd64.deb
 ```
 
 3. Run the application:
    - **From desktop menu**: Click on "ERIS Miner" in your application menu
    - **From command line**: 
 ```bash
-flatpak run --command=eris-miner-launcher org.eristoken.miner
+eris-miner
 ```
 
 ### Raspberry Pi Notes
 
-On Raspberry Pi and other ARM64 Linux systems, the application requires X11 mode. When launching from the command line, use the `eris-miner-launcher` command as shown above. Desktop menu launches will automatically use the correct settings.
+On Raspberry Pi and other ARM64 Linux systems, the application requires X11 mode. The application will automatically detect and use X11 when available.
 
 ## CI/CD
 
@@ -117,7 +123,7 @@ The project uses GitHub Actions for automated building and releases:
 
 - **Trigger**: Automatically runs on push to `main` branch, or manually via workflow dispatch
 - **Build**: Compiles the React app and Electron main process on Ubuntu
-- **Package**: Creates platform-specific installers (DMG for macOS, MSI for Windows, Flatpak for Linux)
+- **Package**: Creates platform-specific installers (DMG for macOS, MSI for Windows, DEB for Linux)
 - **Release**: Automatically publishes a GitHub release with all platform artifacts
 
 Artifacts are versioned using the version from `package.json`.
@@ -140,6 +146,7 @@ The application stores configuration in `settings.json` (located in the Electron
   "cpu_thread_count": 8,
   "gpu_mining_enabled": true,
   "gpu_workgroup_size": 256,
+  "gpu_workgroup_count": 4096,
   "rpc_rate_limit_ms": 200,
   "submission_rate_limit_ms": 1000,
   "challenge_poll_interval_ms": 2000,
@@ -160,7 +167,8 @@ The application stores configuration in `settings.json` (located in the Electron
 | `gas_limit` | Gas limit for mint transactions | `200000` |
 | `cpu_thread_count` | Number of CPU threads for mining | `1` |
 | `gpu_mining_enabled` | Enable WebGPU-accelerated mining | `false` |
-| `gpu_workgroup_size` | GPU workgroup size (64-1024, must be power of 2) | `256` |
+| `gpu_workgroup_size` | Threads per GPU workgroup (64-1024, power of 2) | `256` |
+| `gpu_workgroup_count` | Number of GPU workgroups to dispatch (256-65535) | `4096` |
 | `rpc_rate_limit_ms` | Minimum delay between RPC calls (0 to disable) | `200` |
 | `submission_rate_limit_ms` | Delay between solution submissions | `1000` |
 | `challenge_poll_interval_ms` | Interval for polling new challenges | `2000` |
@@ -238,43 +246,82 @@ The miner supports GPU-accelerated mining using **WebGPU** compute shaders for m
 GPU mining runs alongside CPU mining for maximum hash rate:
 
 1. **Compute Shaders**: Full Keccak256 implementation runs entirely on the GPU
-2. **Parallel Processing**: Processes thousands of nonces simultaneously (workgroup size × 4 per batch)
-3. **Solution Detection**: GPU checks if hash ≤ target and reports valid solutions
-4. **Combined Stats**: Hash rate shows both CPU and GPU contributions
+2. **Parallel Processing**: Processes millions of nonces per batch (workgroup count × workgroup size)
+3. **Pipelined Batches**: Uses command queue pipelining to keep GPU busy (3 batches in flight)
+   - Overlaps computation with data transfer for maximum GPU utilization (70-90%+)
+   - Prevents GPU idle time during buffer readback operations
+4. **Solution Detection**: GPU checks if hash ≤ target and reports valid solutions
+5. **Combined Stats**: Hash rate shows both CPU and GPU contributions
 
 ### Configuration
 
-Enable GPU mining in the Settings page:
+Enable GPU mining in the Settings page with two key parameters:
 
-- **Enable GPU Mining**: Toggle to activate WebGPU mining
-- **GPU Workgroup Size**: Number of parallel threads per workgroup (64-1024)
-  - Higher values = more parallel hashing, but limited by GPU capabilities
-  - The app auto-detects your GPU's maximum and adjusts if needed
-  - Recommended: Start with 256, increase if stable
+- **GPU Workgroup Size**: Threads per workgroup (64-1024, must be power of 2)
+  - Controls how many hashes each workgroup processes
+  - Default: 256 (optimal for most GPUs)
+  - Some GPUs may benefit from 512 or 1024
+  - The app auto-detects your GPU's maximum supported size
+
+- **GPU Workgroup Count**: Number of workgroups to dispatch (256-65535)
+  - Higher values = more parallel workgroups = higher GPU utilization
+  - Default: 4096 (good starting point)
+  - Recommended: 4096-16384 for modern GPUs
+  - NVIDIA Blackwell/RTX 4000+: Try 16384-32768 for maximum performance
+  - The app auto-detects your GPU's maximum capability
+
+**Batch Size = Workgroup Size × Workgroup Count**
+- Example: 256 × 4096 = 1,048,576 hashes per batch
+- Example: 256 × 16384 = 4,194,304 hashes per batch
 
 ### Performance Tips
 
 - GPU mining can be 10-100x faster than CPU depending on your hardware
+- **Pipelined Processing**: The miner uses pipelined batch processing to maximize GPU utilization (70-90%+)
 - Run both CPU and GPU mining for maximum hash rate
-- Monitor the Console page for GPU-related messages
+- Monitor the Console page for GPU-related messages (shows pipeline depth and batch queue status)
 - If GPU mining causes issues, disable it and use CPU-only mode
+- Higher workgroup counts (8192-16384+) can significantly improve performance on modern GPUs
 
 ## Reward Tiers
 
 The miner tracks special reward tiers based on solution difficulty:
-- **Enigma23**: Highest tier reward
+- **Enigma23**: Highest tier reward (jackpot tier)
 - **ErisFavor**: High tier reward
 - **DiscordianBlessing**: Medium-high tier reward
 - **DiscordantMine**: Medium tier reward
 - **NeutralMine**: Standard tier reward
 
-Reward tier counts are displayed on the Home page and included in your mining statistics.
+Reward tier counts are displayed on the Home page and included in your mining statistics. Tier notifications are automatically displayed when solutions are found, even when processing large solution queues.
+
+## Solution Queue Management
+
+The miner uses an intelligent solution queue system:
+
+- **Duplicate Prevention**: Automatically prevents duplicate solutions (same nonce)
+- **Challenge-Based Capping**: Only manages queue when a solution for the current challenge already exists
+- **Multiple Challenges**: Solutions for different challenges can accumulate without limit
+- **Automatic Processing**: Solutions are processed sequentially with rate limiting to prevent RPC throttling
+
+## Transaction Verification
+
+The miner includes comprehensive transaction verification:
+
+- **Mempool Verification**: Verifies transactions are actually in the network mempool
+- **Stability Checks**: Confirms transactions remain in mempool after submission
+- **Drop Detection**: Automatically detects when transactions are dropped from mempool
+- **Replacement Detection**: Identifies when transactions are replaced (same nonce, different hash)
+- **Timeout Handling**: 5-minute timeout with periodic status checks (every 30 seconds)
+- **Clear Error Messages**: Explains why transactions may not appear on blockchain
+
+**Note**: "Transaction submitted" means the transaction entered the mempool, but does not guarantee it will be mined. Transactions can be dropped due to low gas prices, network congestion, or other factors. The miner will detect and report dropped transactions.
 
 ## RPC Rate Limiting
 
 - **Rate Limit**: Configurable delay between RPC calls (default: 200ms, set to 0 to disable)
 - **Auto-Switch**: Automatically switches to the next RPC when rate limited
 - **Switch Delay**: Configurable delay before switching RPCs (default: 20 seconds)
+- **Submission Rate Limit**: Separate rate limiting for solution submissions to prevent transaction spam
 
 ## Gas Fees
 

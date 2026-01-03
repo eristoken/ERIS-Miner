@@ -1,4 +1,4 @@
-// Force X11 on Linux to avoid Wayland issues (especially in Flatpak)
+// Force X11 on Linux to avoid Wayland issues
 // Must be set before importing Electron
 if (process.platform === 'linux') {
   process.env.ELECTRON_OZONE_PLATFORM_HINT = 'x11';
@@ -87,6 +87,7 @@ function initConfigFiles() {
     cpu_thread_count: 1,
     gpu_mining_enabled: false,
     gpu_workgroup_size: 256,
+    gpu_workgroup_count: 4096,
     rpc_rate_limit_ms: 500,
     submission_rate_limit_ms: 1000,
     challenge_poll_interval_ms: 2000,
@@ -340,8 +341,16 @@ ipcMain.handle('read-settings', () => {
       settings.gpu_mining_enabled = false;
       needsSave = true;
     }
+    
+    // Add gpu_workgroup_size if missing (now a configurable parameter again)
     if (!settings.gpu_workgroup_size) {
       settings.gpu_workgroup_size = 256;
+      needsSave = true;
+    }
+    
+    // Add gpu_workgroup_count if missing
+    if (!settings.gpu_workgroup_count) {
+      settings.gpu_workgroup_count = 4096;
       needsSave = true;
     }
     

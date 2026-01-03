@@ -504,21 +504,16 @@ jobs:
           name: build-artifacts
           path: .
       
-      - name: Install Flatpak dependencies
+      - name: Install DEB build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder elfutils
-          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-          flatpak --user install -y flathub org.electronjs.Electron2.BaseApp//24.08
+          sudo apt-get install -y fakeroot dpkg
       
       - name: Install dependencies
         run: npm ci
       
       - name: Package for Linux (x64)
-        run: DEBUG=electron-forge:*,@malept/flatpak-bundler npm run make:linux 2>&1 || (echo "Build failed, checking for flatpak errors..." && cat /tmp/flatpak-builder-* 2>/dev/null || true && exit 1)
-        env:
-          DEBUG: electron-forge:*,@malept/flatpak-bundler
+        run: npm run make:linux
       
       - name: List output directory
         run: |
@@ -546,11 +541,11 @@ jobs:
             echo "package.json not found, using commit hash: ${GITHUB_SHA:0:7}"
           fi
       
-      - name: Upload Flatpak artifact (x64)
+      - name: Upload DEB artifact (x64)
         uses: actions/upload-artifact@v4
         with:
-          name: eris-miner-linux-x64-flatpak-${{ steps.version.outputs.version }}
-          path: out/make/flatpak/x86_64/*.flatpak
+          name: eris-miner-linux-x64-deb-${{ steps.version.outputs.version }}
+          path: out/make/deb/x64/*.deb
           retention-days: 30
 
   package-linux-arm64:
@@ -576,21 +571,16 @@ jobs:
           name: build-artifacts
           path: .
       
-      - name: Install Flatpak dependencies
+      - name: Install DEB build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder elfutils
-          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-          flatpak --user install -y flathub org.electronjs.Electron2.BaseApp//24.08
+          sudo apt-get install -y fakeroot dpkg
       
       - name: Install dependencies
         run: npm ci
       
       - name: Package for Linux (arm64)
-        run: DEBUG=electron-forge:*,@malept/flatpak-bundler npm run make:linux-arm64 2>&1 || (echo "Build failed, checking for flatpak errors..." && cat /tmp/flatpak-builder-* 2>/dev/null || true && exit 1)
-        env:
-          DEBUG: electron-forge:*,@malept/flatpak-bundler
+        run: npm run make:linux-arm64
       
       - name: List output directory
         run: |
@@ -618,11 +608,11 @@ jobs:
             echo "package.json not found, using commit hash: ${GITHUB_SHA:0:7}"
           fi
       
-      - name: Upload Flatpak artifact (arm64)
+      - name: Upload DEB artifact (arm64)
         uses: actions/upload-artifact@v4
         with:
-          name: eris-miner-linux-arm64-flatpak-${{ steps.version.outputs.version }}
-          path: out/make/flatpak/aarch64/*.flatpak
+          name: eris-miner-linux-arm64-deb-${{ steps.version.outputs.version }}
+          path: out/make/deb/arm64/*.deb
           retention-days: 30
 
   publish-release:
@@ -671,18 +661,18 @@ jobs:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
           path: ./artifacts/windows
       
-      - name: Download Linux x64 Flatpak artifact
+      - name: Download Linux x64 DEB artifact
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: eris-miner-linux-x64-flatpak-${{ steps.version.outputs.version }}
+          name: eris-miner-linux-x64-deb-${{ steps.version.outputs.version }}
           path: ./artifacts/linux-x64
       
-      - name: Download Linux arm64 Flatpak artifact
+      - name: Download Linux arm64 DEB artifact
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: eris-miner-linux-arm64-flatpak-${{ steps.version.outputs.version }}
+          name: eris-miner-linux-arm64-deb-${{ steps.version.outputs.version }}
           path: ./artifacts/linux-arm64
       
       - name: Verify artifacts are extracted
@@ -712,13 +702,13 @@ jobs:
             ### Downloads
             - **macOS**: Download the DMG file below
             - **Windows**: Download the MSI file below
-            - **Linux (x64)**: Download the Flatpak file below
-            - **Linux (arm64/Raspberry Pi)**: Download the aarch64 Flatpak file below
+            - **Linux (x64)**: Download the DEB file below
+            - **Linux (arm64/Raspberry Pi)**: Download the arm64 DEB file below
           files: |
             ./artifacts/macos/*.dmg
             ./artifacts/windows/**/*.msi
-            ./artifacts/linux-x64/*.flatpak
-            ./artifacts/linux-arm64/*.flatpak
+            ./artifacts/linux-x64/*.deb
+            ./artifacts/linux-arm64/*.deb
           draft: false
           prerelease: false
         env:

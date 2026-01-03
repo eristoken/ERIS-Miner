@@ -29,33 +29,20 @@ const config = {
       },
     },
     {
-      name: '@electron-forge/maker-flatpak',
+      name: '@electron-forge/maker-deb',
       config: {
         options: {
-          id: 'org.eristoken.miner',
+          name: 'eris-miner',
+          productName: 'ERIS Miner',
           genericName: 'Cryptocurrency Miner',
+          description: 'ERC-918 Token Miner for ERIS and compatible tokens',
           categories: ['Network', 'Finance'],
-          mimeType: [],
-          runtimeVersion: '24.08',
-          base: 'org.electronjs.Electron2.BaseApp',
-          baseVersion: '24.08',
-          icon: {
-            '512x512': './org.eristoken.miner.png',
-          },
-          desktopFile: './org.eristoken.miner.desktop',
-          modules: [
-            {
-              name: 'electron-wrapper-override',
-              buildsystem: 'simple',
-              'build-commands': [
-                'echo \'#!/bin/bash\' > /app/bin/electron-wrapper',
-                'echo \'export ELECTRON_OZONE_PLATFORM_HINT=x11\' >> /app/bin/electron-wrapper',
-                'echo \'exec zypak-wrapper "eris-miner" --ozone-platform=x11 "$@"\' >> /app/bin/electron-wrapper',
-                'chmod +x /app/bin/electron-wrapper',
-              ],
-              sources: [],
-            },
-          ],
+          icon: './eris_token_app_icon.png',
+          maintainer: 'ERIS Token',
+          homepage: 'https://github.com/yourusername/ERIS-Miner',
+          section: 'utils',
+          priority: 'optional',
+          bin: 'eris-miner',
         },
       },
     },

@@ -501,18 +501,22 @@ let currentChallenge: string = '';
 let currentAddress: string = '';
 let currentTarget: bigint = BigInt(0);
 let workerId: number = 0;
-let workgroupSize: number = 256;
-let actualWorkgroupSize: number = 256; // Actual workgroup size used in shader
+let workgroupSize: number = 256; // Configurable workgroup size (threads per workgroup)
+let workgroupCount: number = 4096; // Number of workgroups to dispatch (configurable)
+let maxBufferSize: number = 0; // GPU's max buffer size limit
+let maxStorageBufferBindingSize: number = 0; // GPU's max storage buffer binding size limit
+let maxWorkgroupsPerDimension: number = 65535; // GPU's max dispatch limit
 let baseNonce: bigint = BigInt(0);
 let miningLoop: Promise<void> | null = null;
 let isInitializing: boolean = false; // Flag to prevent concurrent initialization
 let totalHashesProcessed: number = 0; // Persistent hash count across challenge changes
 let lastReportedHashes: number = 0; // Last reported hash count for progress reporting
 let lastDebugLogHashes: number = 0; // Last hash count for debug logging
+let pipelineDepth: number = 3; // Number of batches to pipeline (overlap computation with readback)
 
 // Initialize WebGPU
-// Note: Pipeline needs to be recreated when challenge/address changes
-async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean = false): Promise<boolean> {
+// Note: Pipeline needs to be recreated when challenge/address or workgroup size changes
+async function initWebGPU(forceRecreate: boolean = false): Promise<boolean> {
   // If already initialized and not forcing recreate, verify pipeline exists
   if (gpuDevice && !forceRecreate) {
     // If pipeline is missing, we need to recreate it
@@ -550,50 +554,66 @@ async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean
       return false;
     }
 
-    // Get adapter limits to determine what we can request
+    // Get adapter limits
     const adapterLimits = adapter.limits;
     const maxWorkgroupSizeX = adapterLimits.maxComputeWorkgroupSizeX || 256;
     const maxInvocations = adapterLimits.maxComputeInvocationsPerWorkgroup || 256;
     
-    // Determine the actual workgroup size we'll use
-    // We need to respect BOTH limits: maxComputeWorkgroupSizeX AND maxComputeInvocationsPerWorkgroup
-    // The workgroup size must not exceed either limit
+    // Store all relevant limits for validation
+    maxBufferSize = Number(adapterLimits.maxBufferSize) || 268435456; // Default 256 MB
+    maxStorageBufferBindingSize = Number(adapterLimits.maxStorageBufferBindingSize) || 134217728; // Default 128 MB
+    maxWorkgroupsPerDimension = Number(adapterLimits.maxComputeWorkgroupsPerDimension) || 65535; // Default 65535
+    
+    // Verify requested workgroup size is supported
     const effectiveMaxSize = Math.min(maxWorkgroupSizeX, maxInvocations);
-    let clampedSize = Math.min(requestedWorkgroupSize, effectiveMaxSize);
-    // Round down to nearest power of 2 if needed
-    clampedSize = Math.pow(2, Math.floor(Math.log2(clampedSize)));
-    // Ensure minimum of 64
-    clampedSize = Math.max(64, clampedSize);
+    if (workgroupSize > effectiveMaxSize) {
+      self.postMessage({ 
+        type: 'error', 
+        workerId, 
+        message: `GPU does not support workgroup size ${workgroupSize} (max: ${effectiveMaxSize})` 
+      });
+      return false;
+    }
     
-    actualWorkgroupSize = clampedSize;
+    // Log GPU limits for debugging
+    self.postMessage({ 
+      type: 'info', 
+      workerId, 
+      message: `GPU Limits - Max Buffer: ${(maxBufferSize / (1024 ** 2)).toFixed(0)} MB, Max Binding: ${(maxStorageBufferBindingSize / (1024 ** 2)).toFixed(0)} MB` 
+    });
     
-    if (actualWorkgroupSize !== requestedWorkgroupSize) {
+    // Clamp workgroup size to power of 2 for optimal performance
+    const clampedSize = Math.pow(2, Math.floor(Math.log2(workgroupSize)));
+    if (clampedSize !== workgroupSize) {
       self.postMessage({ 
         type: 'info', 
         workerId, 
-        message: `Workgroup size adjusted from ${requestedWorkgroupSize} to ${actualWorkgroupSize} (adapter limits: maxWorkgroupSizeX=${maxWorkgroupSizeX}, maxInvocations=${maxInvocations})` 
+        message: `Workgroup size adjusted from ${workgroupSize} to ${clampedSize} (nearest power of 2)` 
       });
+      workgroupSize = clampedSize;
     }
     
-    // Request device with appropriate limits - we MUST explicitly request the limits
-    // we need, otherwise WebGPU defaults to lower values (256) even if adapter supports more
-    // The error message tells us: "which can be specified in requiredLimits when calling requestDevice()"
+    // Request device with appropriate limits
+    // IMPORTANT: Request higher buffer limits - default is only 128 MB but most GPUs support 1-4 GB
     gpuDevice = await adapter.requestDevice({
       requiredFeatures: [],
       requiredLimits: {
         maxComputeWorkgroupStorageSize: Math.min(16384, adapterLimits.maxComputeWorkgroupStorageSize || 16384),
-        maxComputeInvocationsPerWorkgroup: actualWorkgroupSize, // Request what we'll actually use
-        maxComputeWorkgroupSizeX: actualWorkgroupSize, // Request what we'll actually use (this is critical!)
+        maxComputeInvocationsPerWorkgroup: workgroupSize,
+        maxComputeWorkgroupSizeX: workgroupSize,
+        // Request the maximum buffer sizes the adapter supports (usually 1-4 GB)
+        maxBufferSize: adapterLimits.maxBufferSize || 268435456, // Default: 256 MB
+        maxStorageBufferBindingSize: adapterLimits.maxStorageBufferBindingSize || 268435456, // Default: 256 MB
       },
     });
 
     gpuQueue = gpuDevice.queue;
 
-    // Generate shader with appropriate workgroup size, challenge, and address
+    // Generate shader with configured workgroup size, challenge, and address
     // Format challenge and address: remove '0x' prefix if present
     const challengeHex = currentChallenge.startsWith('0x') ? currentChallenge.substring(2) : currentChallenge;
     const addressHex = currentAddress.startsWith('0x') ? currentAddress.substring(2) : currentAddress;
-    const shaderCode = generateComputeShaderCode(actualWorkgroupSize, challengeHex, addressHex);
+    const shaderCode = generateComputeShaderCode(workgroupSize, challengeHex, addressHex);
 
     // Create compute shader module with error handling
     // Note: createShaderModule is synchronous and validates syntax immediately
@@ -659,7 +679,7 @@ async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean
       self.postMessage({ 
         type: 'error', 
         workerId, 
-        message: `Failed to create compute pipeline: ${detailedError}. The shader may have syntax errors or the workgroup size (${actualWorkgroupSize}) may exceed device limits.` 
+        message: `Failed to create compute pipeline: ${detailedError}. The shader may have syntax errors or the workgroup size (${workgroupSize}) may exceed device limits.` 
       });
       console.error('=== PIPELINE CREATION ERROR ===');
       console.error('Error:', error);
@@ -684,13 +704,7 @@ async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean
     self.postMessage({ 
       type: 'info', 
       workerId, 
-      message: `Using workgroup size: ${actualWorkgroupSize}` 
-    });
-
-    self.postMessage({ 
-      type: 'info', 
-      workerId, 
-      message: 'WebGPU initialized successfully' 
+      message: `WebGPU initialized - Workgroup size: ${workgroupSize}` 
     });
     return true;
   } catch (error: any) {
@@ -703,35 +717,48 @@ async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean
   }
 }
 
-// Process a batch of nonces on GPU
-// Returns nonces, results (solutions), hashes processed, and optionally GPU hashes for debugging
-async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], results: number[], hashesProcessed: number, gpuHashes?: bigint[] }> {
+// Batch data structure for pipelining
+interface BatchData {
+  noncesBuffer: GPUBuffer;
+  resultsBuffer: GPUBuffer;
+  hashOutputsBuffer: GPUBuffer;
+  paramsBuffer: GPUBuffer;
+  noncesReadbackBuffer: GPUBuffer;
+  resultsReadbackBuffer: GPUBuffer;
+  hashOutputsReadbackBuffer: GPUBuffer;
+  baseNonce: bigint;
+  batchSize: number;
+  promise: Promise<void>;
+}
+
+// Process a batch of nonces on GPU (pipelined version)
+// Submits work to GPU and returns immediately, readback happens asynchronously
+async function submitBatchGPU(batchSize: number, batchBaseNonce: bigint): Promise<BatchData> {
   if (!gpuDevice || !gpuQueue || !computePipeline) {
     throw new Error('WebGPU not initialized');
   }
 
+  // Calculate buffer sizes
+  const noncesBufferSize = batchSize * 8; // vec2<u32> = 8 bytes
+  const resultsBufferSize = batchSize * 4; // u32 = 4 bytes
+
   // Create buffers
-  // vec2<u32> = 2 * 4 bytes = 8 bytes (same as u64)
   const noncesBuffer = gpuDevice.createBuffer({
-    size: batchSize * 8, // vec2<u32> = 8 bytes
+    size: noncesBufferSize,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
   });
 
   const resultsBuffer = gpuDevice.createBuffer({
-    size: batchSize * 4, // u32 = 4 bytes
+    size: resultsBufferSize,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
   });
 
-  // Hash output buffer for debugging (only first 4 hashes: 4 * 4 * 8 bytes = 128 bytes)
   const hashOutputsBuffer = gpuDevice.createBuffer({
     size: 4 * 4 * 8, // 4 hashes * 4 vec2<u32> * 8 bytes = 128 bytes
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
   });
 
   // Create uniform buffer for parameters
-  // Layout: baseNonceLow (4) + baseNonceHigh (4) + workgroupSize (4) + padding (4) + 
-  //         target0-7 (8 * 4 = 32 bytes) = 48 bytes total
-  // Must be aligned to 16 bytes for uniform buffers
   const paramsBufferSize = 48;
   const paramsBuffer = gpuDevice.createBuffer({
     size: paramsBufferSize,
@@ -739,12 +766,10 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
   });
 
   // Split 64-bit values into two 32-bit parts
-  const baseNonceLow = Number(baseNonce & BigInt('0xFFFFFFFF'));
-  const baseNonceHigh = Number(baseNonce >> BigInt(32));
+  const baseNonceLow = Number(batchBaseNonce & BigInt('0xFFFFFFFF'));
+  const baseNonceHigh = Number(batchBaseNonce >> BigInt(32));
   
   // Split full 256-bit target into 8 u32 parts (big-endian order)
-  // Target format: bytes 0-31 where byte 0 is most significant
-  // target0 = bits 224-255 (most significant), target7 = bits 0-31 (least significant)
   const target0 = Number((currentTarget >> BigInt(224)) & BigInt('0xFFFFFFFF'));
   const target1 = Number((currentTarget >> BigInt(192)) & BigInt('0xFFFFFFFF'));
   const target2 = Number((currentTarget >> BigInt(160)) & BigInt('0xFFFFFFFF'));
@@ -754,29 +779,26 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
   const target6 = Number((currentTarget >> BigInt(32)) & BigInt('0xFFFFFFFF'));
   const target7 = Number(currentTarget & BigInt('0xFFFFFFFF'));
 
-  // Write parameters with proper alignment
+  // Write parameters
   const paramsArray = new ArrayBuffer(paramsBufferSize);
   const paramsView = new DataView(paramsArray);
-  paramsView.setUint32(0, baseNonceLow, true); // Offset 0
-  paramsView.setUint32(4, baseNonceHigh, true); // Offset 4
-  paramsView.setUint32(8, batchSize, true); // Offset 8
-  paramsView.setUint32(12, 0, true); // Padding at offset 12
-  // Full 256-bit target (8 u32s)
-  paramsView.setUint32(16, target0, true); // bits 224-255 (most significant)
-  paramsView.setUint32(20, target1, true); // bits 192-223
-  paramsView.setUint32(24, target2, true); // bits 160-191
-  paramsView.setUint32(28, target3, true); // bits 128-159
-  paramsView.setUint32(32, target4, true); // bits 96-127
-  paramsView.setUint32(36, target5, true); // bits 64-95
-  paramsView.setUint32(40, target6, true); // bits 32-63
-  paramsView.setUint32(44, target7, true); // bits 0-31 (least significant)
+  paramsView.setUint32(0, baseNonceLow, true);
+  paramsView.setUint32(4, baseNonceHigh, true);
+  paramsView.setUint32(8, batchSize, true);
+  paramsView.setUint32(12, 0, true); // Padding
+  paramsView.setUint32(16, target0, true);
+  paramsView.setUint32(20, target1, true);
+  paramsView.setUint32(24, target2, true);
+  paramsView.setUint32(28, target3, true);
+  paramsView.setUint32(32, target4, true);
+  paramsView.setUint32(36, target5, true);
+  paramsView.setUint32(40, target6, true);
+  paramsView.setUint32(44, target7, true);
 
   gpuQueue.writeBuffer(paramsBuffer, 0, paramsArray);
 
-  // Get bind group layout from pipeline
+  // Get bind group layout and create bind group
   const bindGroupLayout = computePipeline.getBindGroupLayout(0);
-  
-  // Create bind group
   const bindGroup = gpuDevice.createBindGroup({
     layout: bindGroupLayout,
     entries: [
@@ -787,15 +809,7 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
     ],
   });
 
-  // Create command encoder
-  const encoder = gpuDevice.createCommandEncoder();
-  const pass = encoder.beginComputePass();
-  pass.setPipeline(computePipeline);
-  pass.setBindGroup(0, bindGroup);
-  pass.dispatchWorkgroups(Math.ceil(batchSize / actualWorkgroupSize));
-  pass.end();
-
-  // Create readback buffers for both nonces and results
+  // Create readback buffers
   const noncesReadbackBuffer = gpuDevice.createBuffer({
     size: batchSize * 8,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
@@ -806,58 +820,77 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
 
-  // Hash outputs readback buffer (only first 4)
   const hashOutputsReadbackBuffer = gpuDevice.createBuffer({
-    size: 4 * 4 * 8, // 4 hashes * 4 vec2<u32> * 8 bytes
+    size: 4 * 4 * 8,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
+
+  // Create command encoder and submit work
+  const encoder = gpuDevice.createCommandEncoder();
+  const pass = encoder.beginComputePass();
+  pass.setPipeline(computePipeline);
+  pass.setBindGroup(0, bindGroup);
+  pass.dispatchWorkgroups(Math.ceil(batchSize / workgroupSize));
+  pass.end();
 
   encoder.copyBufferToBuffer(noncesBuffer, 0, noncesReadbackBuffer, 0, batchSize * 8);
   encoder.copyBufferToBuffer(resultsBuffer, 0, resultsReadbackBuffer, 0, batchSize * 4);
   encoder.copyBufferToBuffer(hashOutputsBuffer, 0, hashOutputsReadbackBuffer, 0, 4 * 4 * 8);
+  
+  // Submit to GPU queue (non-blocking)
   gpuQueue.submit([encoder.finish()]);
 
-  // Read back nonces (as vec2<u32> = 2 u32s = 8 bytes)
-  await noncesReadbackBuffer.mapAsync(GPUMapMode.READ);
-  const noncesMappedRange = noncesReadbackBuffer.getMappedRange();
+  // Return batch data - readback will happen asynchronously
+  return {
+    noncesBuffer,
+    resultsBuffer,
+    hashOutputsBuffer,
+    paramsBuffer,
+    noncesReadbackBuffer,
+    resultsReadbackBuffer,
+    hashOutputsReadbackBuffer,
+    baseNonce: batchBaseNonce,
+    batchSize,
+    promise: Promise.resolve(), // Will be set by caller
+  };
+}
+
+// Read back results from a submitted batch
+async function readbackBatchGPU(batch: BatchData): Promise<{ nonces: bigint[], results: number[], hashesProcessed: number, gpuHashes?: bigint[] }> {
+  // Wait for GPU to finish and read back results
+  await batch.noncesReadbackBuffer.mapAsync(GPUMapMode.READ);
+  await batch.resultsReadbackBuffer.mapAsync(GPUMapMode.READ);
+  
+  // Read nonces
+  const noncesMappedRange = batch.noncesReadbackBuffer.getMappedRange();
   const noncesU32Array = new Uint32Array(noncesMappedRange);
-  // Convert vec2<u32> pairs back to bigint (64-bit)
   const nonces: bigint[] = [];
-  for (let i = 0; i < batchSize; i++) {
+  for (let i = 0; i < batch.batchSize; i++) {
     const low = noncesU32Array[i * 2];
     const high = noncesU32Array[i * 2 + 1];
-    // Reconstruct 64-bit value: high << 32 | low
     const nonce = (BigInt(high) << BigInt(32)) | BigInt(low);
     nonces.push(nonce);
   }
-  noncesReadbackBuffer.unmap();
+  batch.noncesReadbackBuffer.unmap();
 
-  // Read back results (u32 = 4 bytes)
-  await resultsReadbackBuffer.mapAsync(GPUMapMode.READ);
-  const resultsMappedRange = resultsReadbackBuffer.getMappedRange();
+  // Read results
+  const resultsMappedRange = batch.resultsReadbackBuffer.getMappedRange();
   const resultsArray = new Uint32Array(resultsMappedRange);
   const results: number[] = [];
-  for (let i = 0; i < batchSize; i++) {
+  for (let i = 0; i < batch.batchSize; i++) {
     results.push(resultsArray[i]);
   }
-  resultsReadbackBuffer.unmap();
+  batch.resultsReadbackBuffer.unmap();
 
-  // Read back hash outputs for debugging (only first 4)
+  // Read hash outputs (optional, for debugging)
   let gpuHashes: bigint[] | undefined = undefined;
   try {
-    await hashOutputsReadbackBuffer.mapAsync(GPUMapMode.READ);
-    const hashOutputsMappedRange = hashOutputsReadbackBuffer.getMappedRange();
+    await batch.hashOutputsReadbackBuffer.mapAsync(GPUMapMode.READ);
+    const hashOutputsMappedRange = batch.hashOutputsReadbackBuffer.getMappedRange();
     const hashOutputsU32Array = new Uint32Array(hashOutputsMappedRange);
     gpuHashes = [];
     for (let i = 0; i < 4; i++) {
-      // Each hash is 4 vec2<u32> = 8 u32s = 256 bits
-      // GPU shader output format (after byte-swap in shader):
-      //   result[j].x = bytes 4j to 4j+3 byte-swapped: (b0<<24)|(b1<<16)|(b2<<8)|b3
-      //   result[j].y = bytes 4j+4 to 4j+7 byte-swapped
-      // Memory layout: [r0.x, r0.y, r1.x, r1.y, r2.x, r2.y, r3.x, r3.y]
-      const baseIdx = i * 8; // 8 u32s per hash (4 vec2<u32>)
-      
-      // Read the 8 u32 values (each vec2<u32> is stored as x, y in memory)
+      const baseIdx = i * 8;
       const r0x = hashOutputsU32Array[baseIdx + 0] ?? 0;
       const r0y = hashOutputsU32Array[baseIdx + 1] ?? 0;
       const r1x = hashOutputsU32Array[baseIdx + 2] ?? 0;
@@ -867,13 +900,7 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
       const r3x = hashOutputsU32Array[baseIdx + 6] ?? 0;
       const r3y = hashOutputsU32Array[baseIdx + 7] ?? 0;
       
-      // Convert each u32 to BigInt safely (>>> 0 ensures unsigned interpretation)
       const toUnsignedBigInt = (val: number): bigint => BigInt(val >>> 0);
-      
-      // The shader output is already in big-endian u32 format (byte-swapped)
-      // Each u32 is (b0<<24)|(b1<<16)|(b2<<8)|b3 which is exactly how BigInt would interpret hex
-      // So we can directly combine them as a 256-bit big-endian integer:
-      // hash = (r0x << 224) | (r0y << 192) | (r1x << 160) | (r1y << 128) | ...
       const fullHash = 
         (toUnsignedBigInt(r0x) << BigInt(224)) |
         (toUnsignedBigInt(r0y) << BigInt(192)) |
@@ -885,24 +912,29 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
         toUnsignedBigInt(r3y);
       gpuHashes.push(fullHash);
     }
-    hashOutputsReadbackBuffer.unmap();
+    batch.hashOutputsReadbackBuffer.unmap();
   } catch (e) {
-    // If hash output reading fails, just continue without it
-    if (hashOutputsReadbackBuffer) {
+    if (batch.hashOutputsReadbackBuffer) {
       try {
-        hashOutputsReadbackBuffer.unmap();
+        batch.hashOutputsReadbackBuffer.unmap();
       } catch {}
     }
   }
 
-  // Update base nonce for next batch
-  baseNonce += BigInt(batchSize);
+  // Clean up buffers
+  batch.noncesBuffer.destroy();
+  batch.resultsBuffer.destroy();
+  batch.hashOutputsBuffer.destroy();
+  batch.paramsBuffer.destroy();
+  batch.noncesReadbackBuffer.destroy();
+  batch.resultsReadbackBuffer.destroy();
+  batch.hashOutputsReadbackBuffer.destroy();
 
-  return { nonces, results, hashesProcessed: batchSize, gpuHashes };
+  return { nonces, results, hashesProcessed: batch.batchSize, gpuHashes };
 }
 
 self.onmessage = async function(e: MessageEvent) {
-  const { challenge, address, target, workerId: id, stop, workgroupSize: wgSize } = e.data;
+  const { challenge, address, target, workerId: id, stop, workgroupSize: wgSize, workgroupCount: wgCount } = e.data;
   
   if (stop) {
     shouldStop = true;
@@ -920,25 +952,27 @@ self.onmessage = async function(e: MessageEvent) {
     return;
   }
   
-  // Check if challenge or address changed - if so, we need to recreate the pipeline
+  // Check if challenge, address, or workgroup size changed - if so, we need to recreate the pipeline
   const challengeChanged = currentChallenge !== challenge;
   const addressChanged = currentAddress !== address;
+  const workgroupSizeChanged = wgSize && workgroupSize !== wgSize;
   
   // Store mining parameters
   currentChallenge = challenge;
   currentAddress = address;
   currentTarget = BigInt(target);
   workerId = id;
-  workgroupSize = wgSize || 256;
+  workgroupSize = wgSize || 256; // Default to 256 if not specified
+  workgroupCount = wgCount || 4096; // Default to 4096 workgroups if not specified
   shouldStop = false;
   baseNonce = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
   
-  // If challenge or address changed, we need to recreate the pipeline
+  // If challenge, address, or workgroup size changed, we need to recreate the pipeline
   // Do this BEFORE checking if mining loop is running, so the pipeline is ready
-  if (gpuDevice && (challengeChanged || addressChanged)) {
-    // Reinitialize with new challenge/address - force recreation of pipeline
+  if (gpuDevice && (challengeChanged || addressChanged || workgroupSizeChanged)) {
+    // Reinitialize with new parameters - force recreation of pipeline
     // This will set computePipeline to null temporarily, then recreate it
-    const initialized = await initWebGPU(workgroupSize, true);
+    const initialized = await initWebGPU(true);
     if (!initialized) {
       self.postMessage({ 
         type: 'error', 
@@ -987,7 +1021,7 @@ self.onmessage = async function(e: MessageEvent) {
       // Start initialization
       isInitializing = true;
       try {
-        const initialized = await initWebGPU(workgroupSize);
+        const initialized = await initWebGPU();
         if (!initialized) {
           self.postMessage({ 
             type: 'error', 
@@ -1008,16 +1042,6 @@ self.onmessage = async function(e: MessageEvent) {
       } finally {
         isInitializing = false;
       }
-    }
-  } else {
-    // If already initialized but workgroup size changed, we'd need to recreate
-    // For now, just use the existing pipeline (workgroup size is fixed at creation)
-    if (workgroupSize !== actualWorkgroupSize) {
-      self.postMessage({ 
-        type: 'info', 
-        workerId, 
-        message: `Note: GPU workgroup size is ${actualWorkgroupSize} (set at initialization). Restart mining to change.` 
-      });
     }
   }
   
@@ -1041,21 +1065,49 @@ self.onmessage = async function(e: MessageEvent) {
   }
   
   const reportInterval = 10000; // Report hashes every 10k
-  const batchSize = actualWorkgroupSize * 4; // Process 4 workgroups at a time (use actual workgroup size)
+  
+  // Calculate batch size using user settings (no auto-adjustment)
+  const batchSize = workgroupCount * workgroupSize;
+  const noncesBufferSize = batchSize * 8; // vec2<u32> = 8 bytes
+  const resultsBufferSize = batchSize * 4; // u32 = 4 bytes
+  
+  // Get actual GPU buffer limits (now that we request them properly)
+  const actualBufferLimit = Math.min(maxBufferSize, maxStorageBufferBindingSize);
+  
+  // Dynamic recommendations based on actual GPU limits
+  // Use 50% as optimal, 80% as high limit (accounts for readback buffers + overhead)
+  const recommendedLimit = actualBufferLimit * 0.5; // 50% of GPU limit (optimal)
+  const highLimit = actualBufferLimit * 0.8; // 80% of GPU limit (high)
+  
+  // Informational warnings only (no forced adjustments)
+  if (noncesBufferSize > highLimit) {
+    self.postMessage({ 
+      type: 'info', 
+      workerId, 
+      message: `⚠️ Buffer size (${(noncesBufferSize / (1024 ** 2)).toFixed(0)} MB) exceeds ${(highLimit / (1024 ** 2)).toFixed(0)} MB (80% of ${(actualBufferLimit / (1024 ** 2)).toFixed(0)} MB GPU limit). May cause errors.` 
+    });
+  } else if (noncesBufferSize > recommendedLimit) {
+    self.postMessage({ 
+      type: 'info', 
+      workerId, 
+      message: `ℹ️ Buffer size (${(noncesBufferSize / (1024 ** 2)).toFixed(0)} MB) is above ${(recommendedLimit / (1024 ** 2)).toFixed(0)} MB (50% of GPU limit, optimal range).` 
+    });
+  }
   
   // Log that GPU mining is starting
   self.postMessage({ 
     type: 'info', 
     workerId, 
-    message: `GPU mining loop started with batch size: ${batchSize}, workgroup size: ${actualWorkgroupSize}` 
+    message: `GPU mining loop started - Workgroups: ${workgroupCount}, Workgroup size: ${workgroupSize}, Batch size: ${batchSize.toLocaleString()} hashes (${(noncesBufferSize / (1024 ** 2)).toFixed(1)} MB + ${(resultsBufferSize / (1024 ** 2)).toFixed(1)} MB buffers), Pipeline depth: ${pipelineDepth} batches` 
   });
   
-  // Mining loop - runs continuously
+  // Mining loop - runs continuously with pipelined batch processing
   miningLoop = (async function mineLoop() {
+    const batchQueue: BatchData[] = [];
+    
     while (!shouldStop) {
       try {
         // Double-check WebGPU is still initialized before each batch
-        // If pipeline is missing (e.g., being recreated), wait for it to be available
         if (!gpuDevice || !gpuQueue) {
           self.postMessage({ 
             type: 'error', 
@@ -1067,7 +1119,6 @@ self.onmessage = async function(e: MessageEvent) {
         
         // If pipeline is missing, it might be getting recreated - wait for it
         if (!computePipeline) {
-          // Pipeline is being recreated, wait for it to be available
           let waitCount = 0;
           while (!computePipeline && !shouldStop && waitCount < 50) {
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -1081,98 +1132,117 @@ self.onmessage = async function(e: MessageEvent) {
             });
             break;
           }
-          // Pipeline is now available, continue mining
         }
         
-        // Process batch on GPU - this now includes full Keccak256 hashing and solution checking
-        const { nonces, results, hashesProcessed: batchHashes, gpuHashes } = await processBatchGPU(batchSize);
-        totalHashesProcessed += batchHashes;
+        // Pipelined batch processing: submit multiple batches before waiting for results
+        // This keeps the GPU busy while we process results from previous batches
         
-        // Check GPU results for solutions (results[i] = 1 means solution found)
-        let solutionCount = 0;
-        // Test: verify GPU hash calculation by comparing GPU hash with CPU hash
-        // Only do this for the first batch and then every 10M hashes to reduce noise
-        const isFirstBatch = totalHashesProcessed <= batchSize;
-        const is10MillionInterval = totalHashesProcessed > 0 && totalHashesProcessed % 10000000 < batchSize;
-        if ((isFirstBatch || is10MillionInterval) && nonces.length > 0 && gpuHashes && gpuHashes.length > 0) {
+        // Submit new batches until we reach pipeline depth
+        while (batchQueue.length < pipelineDepth && !shouldStop) {
+          const batchBaseNonce = baseNonce;
+          baseNonce += BigInt(batchSize);
+          
           try {
-            const testNonce = nonces[0];
-            // Strip 0x prefixes to match GPU shader input
-            const challengeHex = currentChallenge.startsWith('0x') ? currentChallenge.substring(2) : currentChallenge;
-            const addressHex = currentAddress.startsWith('0x') ? currentAddress.substring(2) : currentAddress;
-            const nonceHex = testNonce.toString(16).padStart(64, '0');
-            const concatenated = challengeHex + addressHex + nonceHex;
-            
-            // Convert to bytes for CPU hash (matching what ethers does internally)
-            // hexlify needs "0x" prefix, or we can convert hex string to bytes directly
-            const inputBytes = getBytes(hexlify('0x' + concatenated));
-            const hashHex = keccak256(inputBytes);
-            const cpuHash = BigInt(hashHex);
-            
-            // Log input details for debugging
-            const inputHex = Array.from(inputBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-            const inputFirst16 = inputHex.substring(0, 32);
-            const inputLast16 = inputHex.substring(inputHex.length - 32);
-            
-            const gpuHash = gpuHashes[0];
-            if (gpuHash !== undefined) {
-              const match = cpuHash === gpuHash;
-              // Log for debugging - this will help us see if GPU hash matches CPU
-              self.postMessage({ 
-                type: 'info', 
-                workerId, 
-                message: `Hash test: nonce ${testNonce.toString()}, input len: ${concatenated.length} (${inputBytes.length} bytes), input[0-15]: 0x${inputFirst16}..., input[last-15]: ...${inputLast16}, CPU: 0x${cpuHash.toString(16).padStart(64, '0')}, GPU: 0x${gpuHash.toString(16).padStart(64, '0')}, Match: ${match}` 
-              });
-            }
-          } catch (e: any) {
-            // Log error for debugging
+            const batch = await submitBatchGPU(batchSize, batchBaseNonce);
+            batchQueue.push(batch);
+          } catch (error: any) {
             self.postMessage({ 
               type: 'error', 
               workerId, 
-              message: `Hash test error: ${e.message}` 
+              message: `Failed to submit GPU batch: ${error.message}` 
             });
+            // Wait a bit before retrying
+            await new Promise(resolve => setTimeout(resolve, 100));
+            break;
           }
         }
         
-        for (let i = 0; i < nonces.length; i++) {
-          if (shouldStop) break;
+        // Process the oldest batch (FIFO queue)
+        if (batchQueue.length > 0) {
+          const batch = batchQueue.shift()!;
           
-          if (results[i] === 1) {
-            solutionCount++;
-            // Solution found by GPU! Report it (verification will happen on CPU side in miner.ts)
+          try {
+            const { nonces, results, hashesProcessed: batchHashes, gpuHashes } = await readbackBatchGPU(batch);
+            totalHashesProcessed += batchHashes;
+        
+            // Check GPU results for solutions (results[i] = 1 means solution found)
+            let solutionCount = 0;
+            // Test: verify GPU hash calculation by comparing GPU hash with CPU hash
+            const isFirstBatch = totalHashesProcessed <= batchSize;
+            const is10MillionInterval = totalHashesProcessed > 0 && totalHashesProcessed % 10000000 < batchSize;
+            if ((isFirstBatch || is10MillionInterval) && nonces.length > 0 && gpuHashes && gpuHashes.length > 0) {
+              try {
+                const testNonce = nonces[0];
+                const challengeHex = currentChallenge.startsWith('0x') ? currentChallenge.substring(2) : currentChallenge;
+                const addressHex = currentAddress.startsWith('0x') ? currentAddress.substring(2) : currentAddress;
+                const nonceHex = testNonce.toString(16).padStart(64, '0');
+                const concatenated = challengeHex + addressHex + nonceHex;
+                const inputBytes = getBytes(hexlify('0x' + concatenated));
+                const hashHex = keccak256(inputBytes);
+                const cpuHash = BigInt(hashHex);
+                const inputHex = Array.from(inputBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+                const inputFirst16 = inputHex.substring(0, 32);
+                const inputLast16 = inputHex.substring(inputHex.length - 32);
+                const gpuHash = gpuHashes[0];
+                if (gpuHash !== undefined) {
+                  const match = cpuHash === gpuHash;
+                  self.postMessage({ 
+                    type: 'info', 
+                    workerId, 
+                    message: `Hash test: nonce ${testNonce.toString()}, input len: ${concatenated.length} (${inputBytes.length} bytes), input[0-15]: 0x${inputFirst16}..., input[last-15]: ...${inputLast16}, CPU: 0x${cpuHash.toString(16).padStart(64, '0')}, GPU: 0x${gpuHash.toString(16).padStart(64, '0')}, Match: ${match}` 
+                  });
+                }
+              } catch (e: any) {
+                self.postMessage({ 
+                  type: 'error', 
+                  workerId, 
+                  message: `Hash test error: ${e.message}` 
+                });
+              }
+            }
+            
+            for (let i = 0; i < nonces.length; i++) {
+              if (shouldStop) break;
+              
+              if (results[i] === 1) {
+                solutionCount++;
+                self.postMessage({ 
+                  type: 'solution', 
+                  workerId, 
+                  nonce: nonces[i].toString(), 
+                  hashesProcessed: totalHashesProcessed,
+                  challenge: currentChallenge
+                });
+              }
+            }
+            
+            // Debug: log periodically
+            const hashesSinceLastDebugLog = totalHashesProcessed - lastDebugLogHashes;
+            if (hashesSinceLastDebugLog >= 10000000) {
+              self.postMessage({ 
+                type: 'info', 
+                workerId, 
+                message: `GPU: ${(totalHashesProcessed / 1000000).toFixed(1)}M hashes processed (pipelined: ${batchQueue.length} batches in queue)` 
+              });
+              lastDebugLogHashes = totalHashesProcessed;
+            }
+            
+            // Report progress periodically
+            if (totalHashesProcessed - lastReportedHashes >= reportInterval || batchSize >= reportInterval) {
+              self.postMessage({ type: 'progress', workerId, hashesProcessed: totalHashesProcessed });
+              lastReportedHashes = totalHashesProcessed;
+            }
+          } catch (error: any) {
             self.postMessage({ 
-              type: 'solution', 
+              type: 'error', 
               workerId, 
-              nonce: nonces[i].toString(), 
-              hashesProcessed: totalHashesProcessed,
-              challenge: currentChallenge
+              message: `Failed to readback GPU batch: ${error.message}` 
             });
-            // Continue mining - don't return, keep looking for more solutions
           }
+        } else {
+          // No batches ready yet, yield briefly
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
-        
-        // Debug: log periodically to verify GPU is running and processing batches
-        // Log every 10M hashes to reduce noise (use separate counter to avoid conflicts)
-        const hashesSinceLastDebugLog = totalHashesProcessed - lastDebugLogHashes;
-        if (hashesSinceLastDebugLog >= 10000000) {
-          self.postMessage({ 
-            type: 'info', 
-            workerId, 
-            message: `GPU: ${(totalHashesProcessed / 1000000).toFixed(1)}M hashes processed` 
-          });
-          lastDebugLogHashes = totalHashesProcessed;
-        }
-        
-        // Report progress periodically (every 10k hashes or every batch if batch is large)
-        // This ensures we report frequently enough to show GPU contribution
-        if (totalHashesProcessed - lastReportedHashes >= reportInterval || batchSize >= reportInterval) {
-          self.postMessage({ type: 'progress', workerId, hashesProcessed: totalHashesProcessed });
-          lastReportedHashes = totalHashesProcessed;
-        }
-        
-        // Yield to event loop periodically to check for messages and allow other work
-        // Yield after each batch to prevent blocking
-        await new Promise(resolve => setTimeout(resolve, 0));
       } catch (error: any) {
         self.postMessage({ 
           type: 'error', 

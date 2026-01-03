@@ -7,7 +7,7 @@ This document describes the Electron Forge packaging setup and GitHub Actions wo
 The project uses Electron Forge for packaging the application into distributable formats:
 - **macOS**: DMG files
 - **Windows**: MSI files (via WiX)
-- **Linux**: Flatpak packages
+- **Linux**: DEB packages (Debian/Ubuntu)
 
 ### Installation
 
@@ -15,6 +15,7 @@ Dependencies are already installed via `npm install`. The following packages are
 - `@electron-forge/cli` - Main Forge CLI
 - `@electron-forge/maker-dmg` - macOS DMG maker
 - `@electron-forge/maker-wix` - Windows MSI maker
+- `@electron-forge/maker-deb` - Linux DEB maker
 - `@electron-forge/plugin-auto-unpack-natives` - Native module handling
 
 ### Build Process
@@ -27,9 +28,8 @@ Dependencies are already installed via `npm install`. The following packages are
    - Creates an unpacked application bundle
 
 3. **Make**: `npm run make` (or `make:mac` / `make:win` / `make:linux`)
-   - Creates distributable installers (DMG for macOS, MSI for Windows)
+   - Creates distributable installers (DMG for macOS, MSI for Windows, DEB for Linux)
    - Outputs to `out/make/`
-   - Linux output is used for Flatpak bundling in CI
 
 ### Configuration
 
@@ -73,12 +73,13 @@ The workflow consists of the following jobs:
   - Downloads build artifacts from the build job
   - Supports code signing with Windows certificates
 
-#### 4. Package Linux (`package-linux`)
-- **Runner**: Ubuntu
-- **Purpose**: Create Flatpak package
+#### 4. Package Linux (`package-linux-x64` and `package-linux-arm64`)
+- **Runner**: Ubuntu (x64 and arm64 runners)
+- **Purpose**: Create DEB packages for x64 and ARM64 architectures
 - **Features**:
-  - Uses `@electron-forge/maker-flatpak` for Flatpak generation
+  - Uses `@electron-forge/maker-deb` for DEB package generation
   - Includes desktop integration (icon, categories)
+  - Supports both x64 and ARM64 (Raspberry Pi) architectures
 
 #### 5. Publish Release (`publish-release`)
 - **Runner**: Ubuntu
@@ -86,14 +87,15 @@ The workflow consists of the following jobs:
 - **Features**:
   - Downloads all platform artifacts
   - Creates a GitHub release tagged with the version from `package.json`
-  - Attaches DMG, MSI, and Flatpak files to the release
+  - Attaches DMG, MSI, and DEB files to the release
 
 ### Artifacts
 
 Artifacts are named with the version from `package.json`:
 - `eris-miner-macos-dmg-{version}` - macOS DMG installer
 - `eris-miner-windows-msi-{version}` - Windows MSI installer
-- `eris-miner-linux-flatpak-{version}` - Linux Flatpak package
+- `eris-miner-linux-x64-deb-{version}` - Linux DEB package (x64)
+- `eris-miner-linux-arm64-deb-{version}` - Linux DEB package (ARM64/Raspberry Pi)
 
 ## Release Workflow
 
@@ -164,6 +166,6 @@ To enable code signing in CI, configure these secrets in your repository:
 - Platform-specific icons: `.icns` for macOS, `.ico` for Windows
 - Windows MSI packaging requires WiX Toolset (automatically installed in GitHub Actions)
 - macOS DMG creation requires macOS (automatically available in GitHub Actions macOS runners)
-- Linux Flatpak is built using `@electron-forge/maker-flatpak`
+- Linux DEB packages are built using `@electron-forge/maker-deb` and can be installed with `sudo dpkg -i` or double-clicked
 - Code signing configuration is optional - builds will work without certificates
 
