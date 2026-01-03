@@ -33,8 +33,14 @@ const config = {
       config: {
         options: {
           id: 'org.eristoken.miner',
+          genericName: 'Cryptocurrency Miner',
           categories: ['Network', 'Finance'],
           mimeType: [],
+          runtimeVersion: '24.08',
+          base: 'org.electronjs.Electron2.BaseApp',
+          baseVersion: '24.08',
+          icon: './eris_token_app_icon.png',
+          desktopFile: './org.eristoken.miner.desktop',
         },
       },
     },

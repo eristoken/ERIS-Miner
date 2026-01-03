@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=ERIS Miner
+Comment=ERC-918 Token Miner
+Exec=eris-miner %U
+Icon=org.eristoken.miner
+Terminal=false
+Type=Application
+Categories=Network;Finance;
+StartupWMClass=eris-miner
+
