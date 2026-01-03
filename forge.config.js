@@ -39,7 +39,7 @@ const config = {
           runtimeVersion: '24.08',
           base: 'org.electronjs.Electron2.BaseApp',
           baseVersion: '24.08',
-          icon: './eris_token_app_icon.png',
+          icon: './org.eristoken.miner.png',
           desktopFile: './org.eristoken.miner.desktop',
           modules: [],
         },
