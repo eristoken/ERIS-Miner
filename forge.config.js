@@ -43,9 +43,20 @@ const config = {
             '512x512': './org.eristoken.miner.png',
           },
           desktopFile: './org.eristoken.miner.desktop',
-          modules: [],
-          files: [
-            ['flatpak/electron-wrapper', '/bin/electron-wrapper'],
+          modules: [
+            {
+              name: 'electron-wrapper-override',
+              buildsystem: 'simple',
+              'build-commands': [
+                'install -Dm755 electron-wrapper /app/bin/electron-wrapper',
+              ],
+              sources: [
+                {
+                  type: 'file',
+                  path: 'flatpak/electron-wrapper',
+                },
+              ],
+            },
           ],
         },
       },
