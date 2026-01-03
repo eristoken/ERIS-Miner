@@ -39,6 +39,16 @@ const config = {
           runtimeVersion: '24.08',
           base: 'org.electronjs.Electron2.BaseApp',
           baseVersion: '24.08',
+          finishArgs: [
+            '--socket=x11',
+            '--share=ipc',
+            '--device=dri',
+            '--socket=pulseaudio',
+            '--filesystem=home',
+            '--share=network',
+            '--talk-name=org.freedesktop.Notifications',
+            '--env=ELECTRON_OZONE_PLATFORM_HINT=x11',
+          ],
           icon: {
             '512x512': './org.eristoken.miner.png',
           },
