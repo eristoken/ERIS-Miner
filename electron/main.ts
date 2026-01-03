@@ -518,10 +518,11 @@ function createWindow() {
           console.warn('⚠️  Or switch to an X11 session in your desktop environment.');
           
           // Also show a dialog after a delay if window still isn't focused
-          // Use null as parent so it shows even if main window isn't visible
+          // Show dialog using mainWindow (it exists in this condition)
           setTimeout(() => {
             if (mainWindow && !mainWindow.isFocused() && sessionType.toLowerCase() === 'wayland') {
-              dialog.showMessageBox(null, {
+              // Try to show dialog - if window isn't visible, it may not show, but we try
+              dialog.showMessageBox(mainWindow, {
                 type: 'warning',
                 title: 'ERIS Miner - Wayland Compatibility Issue',
                 message: 'Window May Not Be Visible',
@@ -532,6 +533,9 @@ function createWindow() {
                 buttons: ['OK'],
               }).catch((err) => {
                 console.error('Error showing dialog:', err);
+                // Dialog failed - log the message to console instead
+                console.error('\n⚠️  WAYLAND COMPATIBILITY ISSUE ⚠️');
+                console.error('Window may not be visible. Run with: XDG_SESSION_TYPE=x11 eris-miner');
               });
             }
           }, 5000); // Show after 5 seconds if window still not focused
