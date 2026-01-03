@@ -379,21 +379,143 @@ export class Miner {
         gasLimit,
       });
 
-      this.log('info', `Transaction submitted: ${tx.hash}`);
+      // Verify transaction was actually submitted to the network
+      // The transaction object is created immediately, but we need to verify it was broadcast
+      // Transactions can be dropped if: gas price too low, nonce issues, network congestion, etc.
+      let txVerified = false;
+      let verificationAttempts = 0;
+      const maxVerificationAttempts = 3; // Check 3 times over 6 seconds
+      const verificationDelay = 2000; // Wait 2 seconds between checks
+      
+      this.log('info', `Transaction submitted to mempool: ${tx.hash} (verifying broadcast - does not guarantee it will be mined)...`);
+      
+      while (!txVerified && verificationAttempts < maxVerificationAttempts) {
+        try {
+          const provider = contractWithProvider.runner?.provider || this.provider;
+          if (provider) {
+            // Try to get the transaction from the network
+            const networkTx = await provider.getTransaction(tx.hash);
+            if (networkTx) {
+              // Transaction exists in network - verify it's valid
+              if (networkTx.hash === tx.hash) {
+                txVerified = true;
+                this.log('info', `Transaction verified in mempool: ${tx.hash} (waiting for mining - may be dropped if gas too low)`);
+                break;
+              } else {
+                this.log('warn', `Transaction hash mismatch: expected ${tx.hash}, got ${networkTx.hash}`);
+              }
+            } else {
+              // Transaction not found in network yet, wait and retry
+              verificationAttempts++;
+              if (verificationAttempts < maxVerificationAttempts) {
+                this.log('info', `Transaction ${tx.hash} not yet in network, retrying... (attempt ${verificationAttempts}/${maxVerificationAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, verificationDelay));
+              }
+            }
+          } else {
+            // No provider available, log warning but continue (legacy behavior)
+            this.log('warn', `Transaction submitted but cannot verify (no provider): ${tx.hash}`);
+            txVerified = true; // Assume success to continue
+            break;
+          }
+        } catch (verifyError: any) {
+          verificationAttempts++;
+          const errorMsg = verifyError.message || String(verifyError);
+          
+          // Check for specific errors that indicate transaction was dropped
+          if (errorMsg.includes('not found') || errorMsg.includes('unknown transaction')) {
+            if (verificationAttempts >= maxVerificationAttempts) {
+              this.log('error', `Transaction ${tx.hash} was not found in network after ${maxVerificationAttempts} attempts. It may have been dropped by the network.`);
+              return false;
+            }
+          } else {
+            // Other errors (network issues, etc.) - log and retry
+            this.log('warn', `Error verifying transaction (attempt ${verificationAttempts}/${maxVerificationAttempts}): ${errorMsg}`);
+          }
+          
+          if (verificationAttempts < maxVerificationAttempts) {
+            await new Promise(resolve => setTimeout(resolve, verificationDelay));
+          } else {
+            this.log('error', `Failed to verify transaction ${tx.hash} after ${maxVerificationAttempts} attempts. Transaction may have been dropped.`);
+            return false;
+          }
+        }
+      }
+      
+      if (!txVerified) {
+        this.log('error', `Transaction ${tx.hash} verification failed. Transaction may have been dropped by the network.`);
+        return false;
+      }
+      
+      // Additional stability check: verify transaction is still in mempool after a short delay
+      // This helps catch transactions that are immediately dropped after initial verification
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+      try {
+        const provider = contractWithProvider.runner?.provider || this.provider;
+        if (provider) {
+          const stabilityCheck = await provider.getTransaction(tx.hash);
+          if (!stabilityCheck) {
+            this.log('error', `Transaction ${tx.hash} was dropped from mempool shortly after submission. It will not appear on blockchain.`);
+            return false;
+          }
+          // Also check if transaction was replaced (same nonce, different hash)
+          if (stabilityCheck && stabilityCheck.hash !== tx.hash) {
+            this.log('warn', `Transaction ${tx.hash} was replaced by ${stabilityCheck.hash} (same nonce). Original transaction will not appear on blockchain.`);
+            return false;
+          }
+          this.log('info', `Transaction ${tx.hash} stability check passed - still in mempool`);
+        }
+      } catch (stabilityError: any) {
+        this.log('warn', `Stability check failed for ${tx.hash}: ${stabilityError.message}. Continuing anyway...`);
+      }
       
       // Wait for receipt with timeout to prevent hanging
       // Default timeout: 5 minutes (300 seconds) - should be enough for most networks
       const receiptTimeout = 300000; // 5 minutes in milliseconds
       let receipt: ethers.ContractTransactionReceipt | null = null;
       
-      // Start periodic status logging for pending transactions
+      // Start periodic status logging and mempool checks for pending transactions
       const statusCheckInterval = 30000; // Check every 30 seconds
       let statusCheckCount = 0;
       const maxStatusChecks = Math.floor(receiptTimeout / statusCheckInterval);
-      const statusLogger = setInterval(() => {
+      let lastMempoolCheck: ethers.TransactionResponse | null = null;
+      const statusLogger = setInterval(async () => {
         statusCheckCount++;
         if (statusCheckCount <= maxStatusChecks) {
-          this.log('info', `Transaction ${tx.hash} still pending... (${statusCheckCount * 30}s elapsed)`);
+          try {
+            const provider = contractWithProvider.runner?.provider || this.provider;
+            if (provider) {
+              // Check if transaction is still in mempool
+              const mempoolTx = await provider.getTransaction(tx.hash);
+              if (!mempoolTx) {
+                // Transaction disappeared from mempool - it was likely dropped
+                clearInterval(statusLogger);
+                this.log('error', `Transaction ${tx.hash} disappeared from mempool after ${statusCheckCount * 30}s. It was likely dropped and will not appear on blockchain.`);
+                return;
+              }
+              
+              // Check if transaction was replaced
+              if (mempoolTx.hash !== tx.hash) {
+                clearInterval(statusLogger);
+                this.log('warn', `Transaction ${tx.hash} was replaced by ${mempoolTx.hash}. Original will not appear on blockchain.`);
+                return;
+              }
+              
+              // Check if transaction was mined (has block number)
+              if (mempoolTx.blockNumber !== null) {
+                // Transaction was mined, receipt should be available soon
+                this.log('info', `Transaction ${tx.hash} was mined in block ${mempoolTx.blockNumber}. Waiting for receipt...`);
+              } else {
+                // Still pending
+                this.log('info', `Transaction ${tx.hash} still pending in mempool... (${statusCheckCount * 30}s elapsed)`);
+              }
+              
+              lastMempoolCheck = mempoolTx;
+            }
+          } catch (checkError: any) {
+            // Log error but continue checking
+            this.log('warn', `Error checking transaction status: ${checkError.message}`);
+          }
         }
       }, statusCheckInterval);
       
@@ -427,22 +549,37 @@ export class Miner {
           try {
             const provider = contractWithProvider.runner?.provider || this.provider;
             if (provider) {
-              // Wait a bit more and try to get receipt
-              await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 more seconds
+              // First check if transaction is still in mempool
+              const txResponse = await provider.getTransaction(tx.hash);
+              if (!txResponse) {
+                // Transaction not found - it was dropped from mempool
+                this.log('error', `Transaction ${tx.hash} was dropped from mempool and will not appear on blockchain. It was likely dropped due to low gas price, nonce issues, or network congestion.`);
+                return false;
+              }
               
-              const manualReceipt = await provider.getTransactionReceipt(tx.hash);
-              if (manualReceipt) {
-                receipt = manualReceipt as ethers.ContractTransactionReceipt;
-                this.log('success', `Solution confirmed via manual check! Block: ${receipt.blockNumber}`);
-              } else {
-                // Check if transaction is still pending
-                const txResponse = await provider.getTransaction(tx.hash);
-                if (txResponse && txResponse.blockNumber === null) {
-                  this.log('error', `Transaction ${tx.hash} is still pending in mempool after timeout. It may have been dropped or is stuck.`);
+              // Check if transaction was replaced
+              if (txResponse.hash !== tx.hash) {
+                this.log('warn', `Transaction ${tx.hash} was replaced by ${txResponse.hash} (same nonce). Original will not appear on blockchain.`);
+                return false;
+              }
+              
+              // Check if transaction was mined but receipt not available yet
+              if (txResponse.blockNumber !== null) {
+                // Transaction was mined, try to get receipt
+                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 more seconds
+                const manualReceipt = await provider.getTransactionReceipt(tx.hash);
+                if (manualReceipt) {
+                  receipt = manualReceipt as ethers.ContractTransactionReceipt;
+                  this.log('success', `Solution confirmed via manual check! Block: ${receipt.blockNumber}`);
                 } else {
-                  this.log('error', `Transaction ${tx.hash} status unknown after timeout. No receipt available.`);
+                  this.log('warn', `Transaction ${tx.hash} was mined in block ${txResponse.blockNumber} but receipt not yet available.`);
+                  // Transaction was mined, so it will appear on blockchain eventually
+                  // Return false to avoid processing without receipt
+                  return false;
                 }
-                // Transaction is still pending - return false so it can be retried
+              } else {
+                // Transaction still pending in mempool after timeout
+                this.log('error', `Transaction ${tx.hash} is still pending in mempool after ${receiptTimeout / 1000} seconds. It may be stuck or will be dropped. This transaction may not appear on blockchain.`);
                 return false;
               }
             } else {
