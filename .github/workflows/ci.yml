@@ -720,6 +720,8 @@ jobs:
           sudo apt-get install -y snapd
           sudo systemctl enable --now snapd.socket
           sudo snap install snapcraft --classic
+          # Install core24 base snap (required for base: core24)
+          sudo snap install core24
           # Ensure snapcraft is in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version

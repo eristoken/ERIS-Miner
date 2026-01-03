@@ -185,6 +185,7 @@ if (process.env.BUILD_SNAP === 'true' || process.env.BUILD_SNAP === '1') {
         categories: ['Network', 'Finance'],
         icon: './eris_token_app_icon.png',
         base: 'core24', // Use core24 base (Ubuntu 24.04) instead of deprecated core18
+        buildBase: 'devel', // Required when using core24
       },
     },
   });
