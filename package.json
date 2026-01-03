@@ -1,6 +1,6 @@
 {
   "name": "eris-miner",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "ERC-918 Token Miner with Electron, React, TypeScript, and Material-UI",
   "main": "dist-electron/main.js",
   "author": "",
@@ -38,6 +38,7 @@
     "@electron-forge/cli": "^7.10.2",
     "@electron-forge/maker-dmg": "^7.10.2",
     "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-snap": "^7.10.2",
     "@electron-forge/maker-wix": "^7.10.2",
     "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
     "@types/node": "^20.14.10",

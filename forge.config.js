@@ -49,6 +49,20 @@ const config = {
         },
       },
     },
+    {
+      name: '@electron-forge/maker-snap',
+      config: {
+        options: {
+          name: 'eris-miner',
+          productName: 'ERIS Miner',
+          genericName: 'Cryptocurrency Miner',
+          description: 'ERC-918 Token Miner for ERIS and compatible tokens',
+          summary: 'ERC-918 Token Miner for ERIS and compatible tokens',
+          categories: ['Network', 'Finance'],
+          icon: './eris_token_app_icon.png',
+        },
+      },
+    },
   ],
   plugins: [
     {

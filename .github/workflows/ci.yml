@@ -615,9 +615,143 @@ jobs:
           path: out/make/deb/arm64/*.deb
           retention-days: 30
 
+  package-linux-x64-snap:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      actions: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: .
+      
+      - name: Install Snapcraft dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y snapcraft
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Package for Linux Snap (x64)
+        run: npm run make:linux
+      
+      - name: List output directory
+        run: |
+          echo "Contents of out/make:"
+          find out/make -type f | head -50
+      
+      - name: Determine version for artifacts
+        id: version
+        run: |
+          # Try to get version from package.json, fallback to commit hash
+          if [ -f package.json ]; then
+            PKG_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+            if [ -n "$PKG_VERSION" ] && [ "$PKG_VERSION" != "null" ]; then
+              echo "version=$PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "version_display=Version: $PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "Using version from package.json: $PKG_VERSION"
+            else
+              echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "Falling back to commit hash: ${GITHUB_SHA:0:7}"
+            fi
+          else
+            echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "package.json not found, using commit hash: ${GITHUB_SHA:0:7}"
+          fi
+      
+      - name: Upload Snap artifact (x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: eris-miner-linux-x64-snap-${{ steps.version.outputs.version }}
+          path: out/make/snap/x64/*.snap
+          retention-days: 30
+
+  package-linux-arm64-snap:
+    runs-on: ubuntu-24.04-arm
+    needs: build
+    permissions:
+      contents: read
+      actions: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: .
+      
+      - name: Install Snapcraft dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y snapcraft
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Package for Linux Snap (arm64)
+        run: npm run make:linux-arm64
+      
+      - name: List output directory
+        run: |
+          echo "Contents of out/make:"
+          find out/make -type f | head -50
+      
+      - name: Determine version for artifacts
+        id: version
+        run: |
+          # Try to get version from package.json, fallback to commit hash
+          if [ -f package.json ]; then
+            PKG_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+            if [ -n "$PKG_VERSION" ] && [ "$PKG_VERSION" != "null" ]; then
+              echo "version=$PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "version_display=Version: $PKG_VERSION" >> $GITHUB_OUTPUT
+              echo "Using version from package.json: $PKG_VERSION"
+            else
+              echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+              echo "Falling back to commit hash: ${GITHUB_SHA:0:7}"
+            fi
+          else
+            echo "version=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "version_display=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "package.json not found, using commit hash: ${GITHUB_SHA:0:7}"
+          fi
+      
+      - name: Upload Snap artifact (arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: eris-miner-linux-arm64-snap-${{ steps.version.outputs.version }}
+          path: out/make/snap/arm64/*.snap
+          retention-days: 30
+
   publish-release:
     runs-on: ubuntu-latest
-    needs: [package-macos, package-windows, package-linux-x64, package-linux-arm64]
+    needs: [package-macos, package-windows, package-linux-x64, package-linux-arm64, package-linux-x64-snap, package-linux-arm64-snap]
     permissions:
       contents: write
       actions: read
@@ -675,6 +809,20 @@ jobs:
           name: eris-miner-linux-arm64-deb-${{ steps.version.outputs.version }}
           path: ./artifacts/linux-arm64
       
+      - name: Download Linux x64 Snap artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: eris-miner-linux-x64-snap-${{ steps.version.outputs.version }}
+          path: ./artifacts/linux-x64-snap
+      
+      - name: Download Linux arm64 Snap artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: eris-miner-linux-arm64-snap-${{ steps.version.outputs.version }}
+          path: ./artifacts/linux-arm64-snap
+      
       - name: Verify artifacts are extracted
         run: |
           echo "Checking macOS artifacts..."
@@ -688,6 +836,12 @@ jobs:
           echo ""
           echo "Checking Linux arm64 artifacts..."
           find ./artifacts/linux-arm64 -type f 2>/dev/null || echo "No Linux arm64 artifacts found"
+          echo ""
+          echo "Checking Linux x64 Snap artifacts..."
+          find ./artifacts/linux-x64-snap -type f 2>/dev/null || echo "No Linux x64 Snap artifacts found"
+          echo ""
+          echo "Checking Linux arm64 Snap artifacts..."
+          find ./artifacts/linux-arm64-snap -type f 2>/dev/null || echo "No Linux arm64 Snap artifacts found"
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -702,13 +856,15 @@ jobs:
             ### Downloads
             - **macOS**: Download the DMG file below
             - **Windows**: Download the MSI file below
-            - **Linux (x64)**: Download the DEB file below
-            - **Linux (arm64/Raspberry Pi)**: Download the arm64 DEB file below
+            - **Linux (x64)**: Download the DEB or Snap file below
+            - **Linux (arm64/Raspberry Pi)**: Download the arm64 DEB or Snap file below
           files: |
             ./artifacts/macos/*.dmg
             ./artifacts/windows/**/*.msi
             ./artifacts/linux-x64/*.deb
             ./artifacts/linux-arm64/*.deb
+            ./artifacts/linux-x64-snap/*.snap
+            ./artifacts/linux-arm64-snap/*.snap
           draft: false
           prerelease: false
         env:
