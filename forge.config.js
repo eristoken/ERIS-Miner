@@ -45,10 +45,7 @@ const config = {
           desktopFile: './org.eristoken.miner.desktop',
           modules: [],
           files: [
-            ['flatpak/eris-miner-launcher', '/bin/eris-miner-launcher'],
-          ],
-          symlinks: [
-            ['/bin/eris-miner-launcher', '/bin/electron-wrapper'],
+            ['flatpak/electron-wrapper', '/bin/electron-wrapper'],
           ],
         },
       },
