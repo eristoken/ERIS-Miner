@@ -6,7 +6,11 @@ export interface Settings {
   priority_gas_fee_gwei: number;
   gas_limit: number;
   cpu_thread_count: number;
+  gpu_mining_enabled: boolean;
+  gpu_workgroup_size: number;
   rpc_rate_limit_ms: number;
+  submission_rate_limit_ms: number;
+  challenge_poll_interval_ms: number;
   rpc_switch_delay_seconds: number;
   selected_chain_id: string;
 }
@@ -59,6 +63,9 @@ export interface MiningStats {
   discordianBlessingCount: number;
   discordantMineCount: number;
   neutralMineCount: number;
+  gpuHashesPerSecond: number;
+  gpuTotalHashes: number;
+  gpuEnabled: boolean;
 }
 
 export interface LogEntry {

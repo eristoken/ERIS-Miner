@@ -19,7 +19,8 @@
     "package:win": "electron-forge package --platform=win32",
     "make": "electron-forge make",
     "make:mac": "electron-forge make --platform=darwin",
-    "make:win": "electron-forge make --platform=win32"
+    "make:win": "electron-forge make --platform=win32",
+    "make:linux": "electron-forge make --platform=linux"
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",

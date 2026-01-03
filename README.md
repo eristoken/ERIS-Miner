@@ -100,7 +100,9 @@ The application stores configuration in `settings.json` (located in the Electron
   "priority_gas_fee_gwei": 1,
   "gas_limit": 200000,
   "cpu_thread_count": 1,
-  "rpc_rate_limit_ms": 200,
+  "rpc_rate_limit_ms": 500,
+  "submission_rate_limit_ms": 1000,
+  "challenge_poll_interval_ms": 2000,
   "rpc_switch_delay_seconds": 20,
   "selected_chain_id": "8453"
 }

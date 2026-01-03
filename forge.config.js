@@ -3,7 +3,9 @@ const config = {
   packagerConfig: {
     name: 'ERIS-Miner',
     executableName: 'eris-miner',
-    icon: './eris_token_app_icon.icns',
+    icon: process.platform === 'darwin' ? './eris_token_app_icon.icns' : 
+          process.platform === 'win32' ? './eris_token_app_icon.ico' : 
+          './eris_token_app_icon.png',
     asar: true,
   },
   makers: [
