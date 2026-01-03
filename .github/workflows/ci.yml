@@ -546,7 +546,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eris-miner-linux-x64-flatpak-${{ steps.version.outputs.version }}
-          path: out/make/flatpak/x64/*.flatpak
+          path: out/make/flatpak/x86_64/*.flatpak
           retention-days: 30
 
   package-linux-arm64:
@@ -614,7 +614,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eris-miner-linux-arm64-flatpak-${{ steps.version.outputs.version }}
-          path: out/make/flatpak/arm64/*.flatpak
+          path: out/make/flatpak/aarch64/*.flatpak
           retention-days: 30
 
   publish-release:
