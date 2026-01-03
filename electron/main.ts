@@ -2,16 +2,37 @@
 // Must be set before importing Electron
 if (process.platform === 'linux') {
   process.env.ELECTRON_OZONE_PLATFORM_HINT = 'x11';
+  // Additional Raspberry Pi / ARM64 optimizations
+  process.env.ELECTRON_DISABLE_SANDBOX = '1'; // May help on some ARM systems
 }
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
-// Also add command line switch as backup
+// Enhanced Linux/Raspberry Pi configuration
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform', 'x11');
   app.commandLine.appendSwitch('enable-features', 'UseOzonePlatform');
+  
+  // Disable GPU acceleration on ARM/Raspberry Pi to prevent GPU process crashes
+  // Raspberry Pi and many ARM systems don't have compatible GPU drivers for Electron
+  if (process.arch === 'arm64' || process.arch === 'arm') {
+    console.log('ARM architecture detected - disabling GPU acceleration');
+    app.commandLine.appendSwitch('disable-gpu');
+    app.commandLine.appendSwitch('disable-gpu-compositing');
+    app.commandLine.appendSwitch('disable-software-rasterizer');
+    // Also disable hardware acceleration
+    app.disableHardwareAcceleration();
+  }
+  
+  // Log platform info for debugging
+  console.log('Linux platform detected');
+  console.log('Architecture:', process.arch);
+  console.log('Platform:', process.platform);
+  console.log('DISPLAY:', process.env.DISPLAY || 'not set');
+  console.log('XDG_SESSION_TYPE:', process.env.XDG_SESSION_TYPE || 'not set');
+  console.log('GPU acceleration:', process.arch === 'arm64' || process.arch === 'arm' ? 'disabled (ARM)' : 'enabled');
 }
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -196,9 +217,13 @@ function createWindow() {
   console.log('Preload path:', preloadPath);
   console.log('Preload exists:', fs.existsSync(preloadPath));
   
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 1024,
+  // On Raspberry Pi/Linux, use smaller initial window size and simpler settings
+  const isLinux = process.platform === 'linux';
+  const isARM = process.arch === 'arm64' || process.arch === 'arm';
+  
+  const windowOptions: Electron.BrowserWindowConstructorOptions = {
+    width: isLinux && isARM ? 1024 : 1280, // Smaller for Raspberry Pi
+    height: isLinux && isARM ? 768 : 1024,  // Smaller for Raspberry Pi
     icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
       preload: preloadPath,
@@ -207,12 +232,44 @@ function createWindow() {
       sandbox: false,
     },
     show: false, // Don't show until ready
+    // Additional options for Raspberry Pi
+    ...(isLinux && isARM ? {
+      backgroundColor: '#1a1a1a', // Dark background to prevent flash
+      frame: true,
+      titleBarStyle: 'default',
+    } : {}),
+  };
+  
+  console.log('Creating window with options:', {
+    width: windowOptions.width,
+    height: windowOptions.height,
+    platform: process.platform,
+    arch: process.arch,
   });
+  
+  try {
+    mainWindow = new BrowserWindow(windowOptions);
+    console.log('Window created successfully');
+  } catch (windowError) {
+    console.error('Failed to create window:', windowError);
+    console.error('Window error stack:', windowError instanceof Error ? windowError.stack : 'No stack trace');
+    throw windowError;
+  }
 
   // Show window when ready to prevent visual flash
   mainWindow.once('ready-to-show', () => {
+    console.log('Window ready to show');
     if (mainWindow) {
-      mainWindow.show();
+      try {
+        mainWindow.show();
+        console.log('Window shown successfully');
+        // Focus the window
+        if (mainWindow.isVisible()) {
+          mainWindow.focus();
+        }
+      } catch (showError) {
+        console.error('Error showing window:', showError);
+      }
     }
   });
 
@@ -220,15 +277,79 @@ function createWindow() {
   setTimeout(() => {
     if (mainWindow && !mainWindow.isVisible()) {
       console.log('Window not shown after timeout, forcing show...');
-      mainWindow.show();
+      try {
+        mainWindow.show();
+        if (mainWindow.isVisible()) {
+          console.log('Window forced to show successfully');
+        } else {
+          console.error('Window show() called but window is still not visible');
+        }
+      } catch (showError) {
+        console.error('Error forcing window to show:', showError);
+      }
+    } else if (mainWindow && mainWindow.isVisible()) {
+      console.log('Window is already visible');
     }
   }, 3000);
+  
+  // Additional fallback for Raspberry Pi - longer timeout
+  if (isLinux && isARM) {
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isVisible()) {
+        console.log('Raspberry Pi: Window still not visible after 5 seconds, trying again...');
+        try {
+          mainWindow.show();
+          mainWindow.focus();
+        } catch (retryError) {
+          console.error('Error in retry show:', retryError);
+        }
+      }
+    }, 5000);
+  }
 
   // Handle load errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
     console.error('Failed to load:', errorCode, errorDescription, validatedURL);
+    console.error('Error code:', errorCode);
+    console.error('Error description:', errorDescription);
+    console.error('Failed URL:', validatedURL);
     if (mainWindow) {
       mainWindow.show(); // Show window even on error for debugging
+      // Show error page with details
+      mainWindow.loadURL(`data:text/html,<h1>Failed to Load Application</h1><p>Error Code: ${errorCode}</p><p>Error: ${errorDescription}</p><p>URL: ${validatedURL}</p><p>Please check the console for more details.</p>`);
+    }
+  });
+  
+  // Handle renderer process crashes
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('Renderer process crashed:', details);
+    console.error('Reason:', details.reason);
+    console.error('Exit code:', details.exitCode);
+    if (mainWindow) {
+      mainWindow.loadURL(`data:text/html,<h1>Renderer Process Crashed</h1><p>Reason: ${details.reason}</p><p>Exit Code: ${details.exitCode}</p><p>Please restart the application.</p>`);
+    }
+  });
+  
+  // Handle uncaught exceptions in renderer
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('Renderer process became unresponsive');
+  });
+  
+  mainWindow.webContents.on('responsive', () => {
+    console.log('Renderer process became responsive again');
+  });
+
+  // Track if content loaded successfully
+  let contentLoaded = false;
+  
+  mainWindow.webContents.once('did-finish-load', () => {
+    console.log('Content finished loading');
+    contentLoaded = true;
+    // Ensure window is visible after content loads
+    if (mainWindow && !mainWindow.isVisible()) {
+      console.log('Window not visible after content load, showing...');
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
 
@@ -247,7 +368,9 @@ function createWindow() {
     
     // loadFile works with asar paths, so we don't need to check existsSync
     // The error handler above will catch any load failures
-    mainWindow.loadFile(indexPath).catch((error) => {
+    mainWindow.loadFile(indexPath).then(() => {
+      console.log('Successfully loaded index.html');
+    }).catch((error) => {
       console.error('Failed to load index.html:', error);
       if (!mainWindow) return;
       // Fallback: try with app.getAppPath()
@@ -258,10 +381,31 @@ function createWindow() {
         // Show error page
         if (mainWindow) {
           mainWindow.loadURL('data:text/html,<h1>Error: Failed to load application</h1><p>Please check the console for details.</p>');
+          mainWindow.show();
         }
       });
     });
   }
+  
+  // Final check after a delay to ensure window is visible
+  setTimeout(() => {
+    if (mainWindow) {
+      const isVisible = mainWindow.isVisible();
+      const isDestroyed = mainWindow.isDestroyed();
+      console.log('Window status check:');
+      console.log('  Visible:', isVisible);
+      console.log('  Destroyed:', isDestroyed);
+      console.log('  Content loaded:', contentLoaded);
+      
+      if (!isDestroyed && !isVisible) {
+        console.log('Window exists but not visible - forcing show');
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    } else {
+      console.log('Window is null in final check');
+    }
+  }, 2000);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -273,6 +417,11 @@ app.whenReady().then(() => {
     console.log('App is ready, initializing...');
     console.log('isDev:', isDev);
     console.log('isPackaged:', app.isPackaged);
+    console.log('Platform:', process.platform);
+    console.log('Architecture:', process.arch);
+    console.log('Node version:', process.versions.node);
+    console.log('Electron version:', process.versions.electron);
+    console.log('Chrome version:', process.versions.chrome);
     
     // Initialize config paths first (requires app to be ready for userData path)
     initConfigPaths();
@@ -282,14 +431,35 @@ app.whenReady().then(() => {
     createWindow();
   } catch (error) {
     console.error('Error during app initialization:', error);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     // Still try to initialize paths and create window for debugging
     try {
       initConfigPaths();
       initConfigFiles();
     } catch (e) {
       console.error('Error initializing config:', e);
+      console.error('Config error stack:', e instanceof Error ? e.stack : 'No stack trace');
     }
-    createWindow();
+    try {
+      createWindow();
+    } catch (windowError) {
+      console.error('Error creating window:', windowError);
+      console.error('Window error stack:', windowError instanceof Error ? windowError.stack : 'No stack trace');
+      // Try to show error in a basic window
+      try {
+        const errorWindow = new BrowserWindow({
+          width: 800,
+          height: 600,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+          },
+        });
+        errorWindow.loadURL(`data:text/html,<h1>Application Error</h1><pre>${String(error)}</pre><pre>${windowError instanceof Error ? windowError.stack : String(windowError)}</pre>`);
+      } catch (finalError) {
+        console.error('Failed to create error window:', finalError);
+      }
+    }
   }
 
   app.on('activate', () => {
@@ -299,6 +469,16 @@ app.whenReady().then(() => {
   });
 }).catch((error) => {
   console.error('Failed to initialize app:', error);
+  console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+  // Try to show error dialog if possible
+  if (app.isReady()) {
+    try {
+      dialog.showErrorBox('Application Failed to Start', 
+        `The application failed to initialize.\n\nError: ${error instanceof Error ? error.message : String(error)}\n\nPlease check the console for more details.`);
+    } catch (dialogError) {
+      console.error('Failed to show error dialog:', dialogError);
+    }
+  }
 });
 
 app.on('window-all-closed', () => {
