@@ -12,7 +12,9 @@ export class Miner {
   private isSubmitting: boolean = false; // Used by queue processor to show UI state
   private stats: MiningStats;
   private workers: Worker[] = [];
+  private gpuWorkers: Worker[] = [];
   private workerHashes: Map<number, number> = new Map(); // Track hashes per worker
+  private gpuWorkerHashes: Map<number, number> = new Map(); // Track hashes per GPU worker
   private solutionQueue: Array<{ nonce: string; workerId: number; challenge: string }> = []; // Queue for all found solutions
   private isProcessingQueue: boolean = false; // Flag to prevent multiple queue processors
   private contract: ethers.Contract | null = null;
@@ -23,6 +25,7 @@ export class Miner {
   private onTierUpdate?: (tier: RewardTier, reward: string) => void;
   private startTime: number = 0;
   private totalHashes: number = 0;
+  private gpuTotalHashes: number = 0;
   private solutionsFound: number = 0;
   private tokensMinted: number = 0;
   private failedSolutions: number = 0;
@@ -54,6 +57,9 @@ export class Miner {
       discordianBlessingCount: 0,
       discordantMineCount: 0,
       neutralMineCount: 0,
+      gpuHashesPerSecond: 0,
+      gpuTotalHashes: 0,
+      gpuEnabled: false,
     };
   }
 
@@ -87,6 +93,7 @@ export class Miner {
 
   async updateSettings(settings: Settings, rpcs: Record<string, RpcEndpoint[]>) {
     this.settings = settings;
+    // Use rpc_rate_limit_ms for general RPC rate limiting
     this.rpcManager.setRateLimit(settings.rpc_rate_limit_ms);
     this.rpcManager.setSwitchDelay(settings.rpc_switch_delay_seconds * 1000);
 
@@ -553,13 +560,21 @@ export class Miner {
 
       return true;
     } catch (error: any) {
-      // Extract error message from various possible locations
-      const errorMessage = (
+      // Extract error message from various possible locations (ethers.js v6 has different error structure)
+      const errorMessageRaw = (
         error.message || 
         error.reason || 
         (error.revert && error.revert.args && error.revert.args[0]) ||
+        (error.info && error.info.error && error.info.error.message) ||
+        (error.shortMessage) ||
         ''
-      ).toLowerCase();
+      );
+      const errorMessage = errorMessageRaw.toLowerCase();
+      
+      // Also check if this is a transaction that was mined but reverted (status: 0)
+      // In ethers v6, reverted transactions throw CALL_EXCEPTION with receipt info
+      const isRevertedTransaction = error.code === 'CALL_EXCEPTION' && 
+        error.receipt && error.receipt.status === 0;
       
       // Check for "Already rewarded in this block" - this is expected and should be skipped
       if (errorMessage.includes('already rewarded') || errorMessage.includes('already rewarded in this block')) {
@@ -570,6 +585,13 @@ export class Miner {
       // Check for "Digest exceeds target" - solution is invalid (stale challenge or wrong hash)
       if (errorMessage.includes('digest exceeds target')) {
         this.log('warn', 'Solution digest exceeds target (likely stale challenge), skipping...');
+        return false; // Skip this solution, continue mining
+      }
+      
+      // Check for reverted transaction with no reason - likely stale solution or race condition
+      // This happens when two solutions are found nearly simultaneously for the same challenge
+      if (isRevertedTransaction && (error.reason === null || error.reason === undefined)) {
+        this.log('warn', 'Solution transaction reverted (likely stale challenge or race condition with another solution), skipping...');
         return false; // Skip this solution, continue mining
       }
       
@@ -702,6 +724,14 @@ export class Miner {
     );
   }
 
+  private createGPUWorker(): Worker {
+    // Create a GPU mining worker using WebGPU
+    return new Worker(
+      new URL('./gpuMiningWorker.ts', import.meta.url),
+      { type: 'module' }
+    );
+  }
+
   async start() {
     if (this.isMining) {
       return;
@@ -718,6 +748,7 @@ export class Miner {
       this.isMining = true;
       this.startTime = Date.now();
       this.totalHashes = 0;
+      this.gpuTotalHashes = 0;
       this.solutionsFound = 0;
       this.tokensMinted = 0;
       this.failedSolutions = 0;
@@ -739,6 +770,9 @@ export class Miner {
       this.stats.discordianBlessingCount = 0;
       this.stats.discordantMineCount = 0;
       this.stats.neutralMineCount = 0;
+      this.stats.gpuHashesPerSecond = 0;
+      this.stats.gpuTotalHashes = 0;
+      this.stats.gpuEnabled = this.settings.gpu_mining_enabled || false;
       this.stats.solutionFound = false;
       this.stats.isSubmitting = false;
       this.stats.pendingSolutions = 0;
@@ -766,13 +800,21 @@ export class Miner {
     this.isSubmitting = false;
     this.stats.isMining = false;
     
-    // Stop all workers immediately
+    // Stop all CPU workers immediately
     this.workers.forEach((worker) => {
       worker.postMessage({ stop: true });
       worker.terminate();
     });
     this.workers = [];
     this.workerHashes.clear();
+    
+    // Stop all GPU workers
+    this.gpuWorkers.forEach((worker) => {
+      worker.postMessage({ stop: true });
+      worker.terminate();
+    });
+    this.gpuWorkers = [];
+    this.gpuWorkerHashes.clear();
     
     // Clear solution queue
     this.solutionQueue = [];
@@ -782,29 +824,33 @@ export class Miner {
     await new Promise((resolve) => setTimeout(resolve, 100));
     
     // Reset stats when stopping so UI toggles off cleanly
-    this.startTime = 0;
-    this.totalHashes = 0;
-    this.solutionsFound = 0;
-    this.tokensMinted = 0;
-    this.failedSolutions = 0;
-    this.enigma23Count = 0;
-    this.erisFavorCount = 0;
-    this.discordianBlessingCount = 0;
-    this.discordantMineCount = 0;
-    this.neutralMineCount = 0;
-    this.stats.hashesPerSecond = 0;
-    this.stats.totalHashes = 0;
-    this.stats.solutionsFound = 0;
-    this.stats.tokensMinted = 0;
-    this.stats.failedSolutions = 0;
-    this.stats.enigma23Count = 0;
-    this.stats.erisFavorCount = 0;
-    this.stats.discordianBlessingCount = 0;
-    this.stats.discordantMineCount = 0;
-    this.stats.neutralMineCount = 0;
-    this.stats.solutionFound = false;
-    this.stats.isSubmitting = false;
-    this.stats.pendingSolutions = 0;
+      this.startTime = 0;
+      this.totalHashes = 0;
+      this.gpuTotalHashes = 0;
+      this.solutionsFound = 0;
+      this.tokensMinted = 0;
+      this.failedSolutions = 0;
+      this.enigma23Count = 0;
+      this.erisFavorCount = 0;
+      this.discordianBlessingCount = 0;
+      this.discordantMineCount = 0;
+      this.neutralMineCount = 0;
+      this.stats.hashesPerSecond = 0;
+      this.stats.totalHashes = 0;
+      this.stats.solutionsFound = 0;
+      this.stats.tokensMinted = 0;
+      this.stats.failedSolutions = 0;
+      this.stats.enigma23Count = 0;
+      this.stats.erisFavorCount = 0;
+      this.stats.discordianBlessingCount = 0;
+      this.stats.discordantMineCount = 0;
+      this.stats.neutralMineCount = 0;
+      this.stats.gpuHashesPerSecond = 0;
+      this.stats.gpuTotalHashes = 0;
+      this.stats.gpuEnabled = false;
+      this.stats.solutionFound = false;
+      this.stats.isSubmitting = false;
+      this.stats.pendingSolutions = 0;
     // Don't clear errorMessage here - let user see it
     if (this.onStatsUpdate) {
       this.onStatsUpdate({ ...this.stats });
@@ -920,6 +966,10 @@ export class Miner {
               // But update again here to ensure UI reflects latest state
               this.updateStats();
               this.log('success', 'Solution submitted successfully');
+              
+              // Immediately refresh challenge and notify all workers
+              // This reduces stale solutions from workers still mining old challenge
+              await this.refreshChallengeAndNotifyWorkers();
             } else {
               // Submission failed (non-fatal error like "Already rewarded")
               this.failedSolutions++;
@@ -962,9 +1012,9 @@ export class Miner {
         }
       }
       
-      // Apply RPC rate limiting between submissions
-      if (this.isMining && this.settings.rpc_rate_limit_ms > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.settings.rpc_rate_limit_ms));
+      // Apply rate limiting between submissions
+      if (this.isMining && this.settings.submission_rate_limit_ms > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.settings.submission_rate_limit_ms));
       }
       
       // Small delay even if rate limiting is disabled, but shorter to process queue faster
@@ -974,6 +1024,49 @@ export class Miner {
     }
     
     this.isProcessingQueue = false;
+  }
+
+  /**
+   * Immediately refresh challenge from contract and notify all workers.
+   * Called after a successful solution submission to minimize stale solutions.
+   */
+  private async refreshChallengeAndNotifyWorkers(): Promise<void> {
+    if (!this.contract || !this.isMining) return;
+    
+    try {
+      // Fetch new challenge from contract
+      const challenge = await this.contract.getChallengeNumber();
+      const target = await this.contract.getMiningTarget();
+      
+      // Update stats with new challenge
+      this.stats.currentChallenge = challenge;
+      
+      // Notify all CPU workers
+      for (let i = 0; i < this.workers.length; i++) {
+        this.workers[i].postMessage({
+          challenge,
+          address: this.settings.mining_account_public_address,
+          target: target.toString(),
+          workerId: i,
+        });
+      }
+      
+      // Notify all GPU workers (they will recreate pipeline with new challenge)
+      for (let i = 0; i < this.gpuWorkers.length; i++) {
+        this.gpuWorkers[i].postMessage({
+          challenge,
+          address: this.settings.mining_account_public_address,
+          target: target.toString(),
+          workerId: i,
+          workgroupSize: this.settings.gpu_workgroup_size || 256,
+        });
+      }
+      
+      this.log('info', `Challenge refreshed: ${challenge.substring(0, 10)}...`);
+    } catch (error: any) {
+      // Non-fatal - the main mine loop will refresh eventually
+      this.log('warn', `Failed to refresh challenge after submission: ${error.message}`);
+    }
   }
 
   private async mine() {
@@ -1042,7 +1135,7 @@ export class Miner {
         // Workers will continuously mine and add solutions to queue
         const threads = this.settings.cpu_thread_count;
         
-        // Only create workers if they don't exist
+        // Only create CPU workers if they don't exist
         if (this.workers.length === 0) {
           // Create Web Workers for true parallel processing
           // Workers will continuously mine and add solutions to queue
@@ -1063,7 +1156,7 @@ export class Miner {
                 this.updateStats();
               } else if (type === 'solution') {
                 // Solution found! Add to queue and continue mining
-                this.log('success', `Solution found by worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
+                this.log('success', `Solution found by CPU worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
                 
                 // Add solution to queue
                 this.solutionQueue.push({ 
@@ -1086,14 +1179,67 @@ export class Miner {
             };
             
             worker.onerror = (error) => {
-              this.log('error', `Worker ${i} error: ${error.message}`);
+              this.log('error', `CPU Worker ${i} error: ${error.message}`);
             };
           }
           
-          this.log('info', `Started ${threads} mining worker(s) for true parallel processing`);
+          this.log('info', `Started ${threads} CPU mining worker(s) for true parallel processing`);
         }
         
-        // Update existing workers with new challenge/target (if challenge changed)
+        // Create GPU workers if GPU mining is enabled
+        if (this.settings.gpu_mining_enabled && this.gpuWorkers.length === 0) {
+          try {
+            // Create a single GPU worker (can be extended to support multiple GPUs)
+            const gpuWorker = this.createGPUWorker();
+            this.gpuWorkers.push(gpuWorker);
+            this.gpuWorkerHashes.set(0, 0);
+            
+            // Set up GPU worker message handler
+            gpuWorker.onmessage = (e: MessageEvent) => {
+              const { type, workerId, nonce, hashesProcessed, challenge: solutionChallenge, message } = e.data;
+              
+              if (type === 'progress') {
+                // Update GPU hash count
+                this.gpuWorkerHashes.set(workerId, hashesProcessed);
+                this.gpuTotalHashes = Array.from(this.gpuWorkerHashes.values()).reduce((sum, count) => sum + count, 0);
+                this.updateStats();
+              } else if (type === 'solution') {
+                // Solution found by GPU! Add to queue
+                this.log('success', `Solution found by GPU worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
+                
+                this.solutionQueue.push({ 
+                  nonce, 
+                  workerId: 1000 + workerId, // Use high IDs for GPU workers to distinguish
+                  challenge: solutionChallenge || challenge 
+                });
+                
+                this.stats.solutionFound = true;
+                this.stats.pendingSolutions = this.solutionQueue.length;
+                if (this.onStatsUpdate) {
+                  this.onStatsUpdate({ ...this.stats });
+                }
+              } else if (type === 'info') {
+                this.log('info', `GPU Worker: ${message}`);
+              } else if (type === 'error') {
+                this.log('error', `GPU Worker error: ${message}`);
+              } else if (type === 'stopped') {
+                // GPU worker stopped
+              }
+            };
+            
+            gpuWorker.onerror = (error) => {
+              this.log('error', `GPU Worker error: ${error.message}`);
+            };
+            
+            this.log('info', 'GPU mining worker created');
+            this.stats.gpuEnabled = true;
+          } catch (error: any) {
+            this.log('error', `Failed to create GPU worker: ${error.message}`);
+            this.stats.gpuEnabled = false;
+          }
+        }
+        
+        // Update existing CPU workers with new challenge/target (if challenge changed)
         // This allows workers to continue mining with updated parameters without resetting hash counts
         for (let i = 0; i < this.workers.length; i++) {
           this.workers[i].postMessage({
@@ -1101,6 +1247,17 @@ export class Miner {
             address: this.settings.mining_account_public_address,
             target: target.toString(),
             workerId: i,
+          });
+        }
+        
+        // Update GPU workers with new challenge/target
+        for (let i = 0; i < this.gpuWorkers.length; i++) {
+          this.gpuWorkers[i].postMessage({
+            challenge,
+            address: this.settings.mining_account_public_address,
+            target: target.toString(),
+            workerId: i,
+            workgroupSize: this.settings.gpu_workgroup_size || 256,
           });
         }
         
@@ -1130,8 +1287,12 @@ export class Miner {
     }
     
     const elapsed = (Date.now() - this.startTime) / 1000;
-    this.stats.hashesPerSecond = elapsed > 0 ? this.totalHashes / elapsed : 0;
-    this.stats.totalHashes = this.totalHashes;
+    // Calculate combined hashrate (CPU + GPU)
+    const combinedTotalHashes = this.totalHashes + this.gpuTotalHashes;
+    this.stats.hashesPerSecond = elapsed > 0 ? combinedTotalHashes / elapsed : 0;
+    this.stats.totalHashes = combinedTotalHashes;
+    this.stats.gpuHashesPerSecond = elapsed > 0 ? this.gpuTotalHashes / elapsed : 0;
+    this.stats.gpuTotalHashes = this.gpuTotalHashes;
     this.stats.solutionsFound = this.solutionsFound;
     this.stats.tokensMinted = this.tokensMinted;
     this.stats.failedSolutions = this.failedSolutions;
@@ -1140,6 +1301,7 @@ export class Miner {
     this.stats.discordianBlessingCount = this.discordianBlessingCount;
     this.stats.discordantMineCount = this.discordantMineCount;
     this.stats.neutralMineCount = this.neutralMineCount;
+    this.stats.gpuEnabled = this.settings.gpu_mining_enabled || false;
     
     // Ensure isMining flag matches internal state
     this.stats.isMining = this.isMining;

@@ -73,7 +73,11 @@ function initConfigFiles() {
     priority_gas_fee_gwei: 0.000005,
     gas_limit: 250000,
     cpu_thread_count: 1,
-    rpc_rate_limit_ms: 200,
+    gpu_mining_enabled: false,
+    gpu_workgroup_size: 256,
+    rpc_rate_limit_ms: 500,
+    submission_rate_limit_ms: 1000,
+    challenge_poll_interval_ms: 2000,
     rpc_switch_delay_seconds: 20,
     selected_chain_id: '8453',
   };
@@ -316,6 +320,16 @@ ipcMain.handle('read-settings', () => {
     // Migration: Add gas_limit if missing
     if (!settings.gas_limit) {
       settings.gas_limit = 200000; // Default from MVis-tokenminer
+      needsSave = true;
+    }
+    
+    // Migration: Add GPU mining settings if missing
+    if (settings.gpu_mining_enabled === undefined) {
+      settings.gpu_mining_enabled = false;
+      needsSave = true;
+    }
+    if (!settings.gpu_workgroup_size) {
+      settings.gpu_workgroup_size = 256;
       needsSave = true;
     }
     

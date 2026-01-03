@@ -6,14 +6,15 @@ This document describes the Electron Forge packaging setup and GitHub Actions wo
 
 The project uses Electron Forge for packaging the application into distributable formats:
 - **macOS**: DMG files
-- **Windows**: MSIX files (via WiX)
+- **Windows**: MSI files (via WiX)
+- **Linux**: Flatpak packages
 
 ### Installation
 
 Dependencies are already installed via `npm install`. The following packages are used:
 - `@electron-forge/cli` - Main Forge CLI
 - `@electron-forge/maker-dmg` - macOS DMG maker
-- `@electron-forge/maker-wix` - Windows MSIX maker
+- `@electron-forge/maker-wix` - Windows MSI maker
 - `@electron-forge/plugin-auto-unpack-natives` - Native module handling
 
 ### Build Process
@@ -25,94 +26,91 @@ Dependencies are already installed via `npm install`. The following packages are
 2. **Package**: `npm run package` (or `package:mac` / `package:win`)
    - Creates an unpacked application bundle
 
-3. **Make**: `npm run make` (or `make:mac` / `make:win`)
-   - Creates distributable installers (DMG for macOS, MSIX for Windows)
+3. **Make**: `npm run make` (or `make:mac` / `make:win` / `make:linux`)
+   - Creates distributable installers (DMG for macOS, MSI for Windows)
    - Outputs to `out/make/`
+   - Linux output is used for Flatpak bundling in CI
 
 ### Configuration
 
-The Forge configuration is in `package.json` under `config.forge`:
+The Forge configuration is in `forge.config.js`:
 - **Packager Config**: Sets app name, executable name, and icon
 - **Makers**: Configured for DMG (macOS) and WiX (Windows)
 - **Plugins**: Auto-unpack natives for native module support
+- **Code Signing**: Supports macOS and Windows code signing via environment variables
 
-## GitHub Actions Workflows
+## GitHub Actions CI/CD
 
-All workflows are manual (`workflow_dispatch`) and located in `.github/workflows/`:
+The project uses a unified CI/CD workflow located in `.github/workflows/ci.yml`.
 
-### 1. Build Workflow (`build.yml`)
+### Trigger Conditions
 
-**Purpose**: Build the application and upload artifacts
+- **Automatic**: Runs on every push to `main` branch
+- **Manual**: Can be triggered manually via GitHub Actions UI (workflow_dispatch)
 
-**Usage**:
-- Go to Actions → Build → Run workflow
-- No inputs required
+### Pipeline Jobs
 
-**Outputs**:
-- Build artifacts uploaded to GitHub Actions artifacts
+The workflow consists of the following jobs:
 
-### 2. Package macOS (`package-macos.yml`)
+#### 1. Build (`build`)
+- **Runner**: Ubuntu
+- **Purpose**: Build the React app and Electron main process
+- **Outputs**: Uploads `dist/` and `dist-electron/` as artifacts
 
-**Purpose**: Build and package the app for macOS as a DMG
+#### 2. Package macOS (`package-macos`)
+- **Runner**: macOS
+- **Purpose**: Create signed and notarized DMG installer
+- **Features**:
+  - Downloads build artifacts from the build job
+  - Supports code signing with Apple Developer certificates
+  - Supports notarization with Apple's notary service
+  - Falls back to unsigned builds if certificates aren't configured
 
-**Usage**:
-- Go to Actions → Package macOS → Run workflow
-- Input: `version` (e.g., `v1.0.0`)
+#### 3. Package Windows (`package-windows`)
+- **Runner**: Windows
+- **Purpose**: Create MSI installer
+- **Features**:
+  - Downloads build artifacts from the build job
+  - Supports code signing with Windows certificates
 
-**Outputs**:
-- DMG file uploaded as artifact: `eris-miner-macos-{version}`
-- If run on a tag, automatically creates a GitHub release
+#### 4. Package Linux (`package-linux`)
+- **Runner**: Ubuntu
+- **Purpose**: Create Flatpak package
+- **Features**:
+  - Uses `org.eris.miner.yml` Flatpak manifest
+  - Bundles the Electron app as a Flatpak
+  - Includes desktop integration (icon, .desktop file)
 
-### 3. Package Windows (`package-windows.yml`)
+#### 5. Publish Release (`publish-release`)
+- **Runner**: Ubuntu
+- **Purpose**: Create GitHub release with all platform artifacts
+- **Features**:
+  - Downloads all platform artifacts
+  - Creates a GitHub release tagged with the version from `package.json`
+  - Attaches DMG, MSI, and Flatpak files to the release
 
-**Purpose**: Build and package the app for Windows as MSIX
+### Artifacts
 
-**Usage**:
-- Go to Actions → Package Windows → Run workflow
-- Input: `version` (e.g., `v1.0.0`)
-
-**Outputs**:
-- MSIX file uploaded as artifact: `eris-miner-windows-{version}`
-- If run on a tag, automatically creates a GitHub release
-
-### 4. Publish Release (`publish-release.yml`)
-
-**Purpose**: Create a GitHub release with both macOS and Windows packages
-
-**Usage**:
-- Go to Actions → Publish Release → Run workflow
-- Inputs:
-  - `version`: Version tag (e.g., `v1.0.0`)
-  - `release_notes`: Optional release notes
-
-**Prerequisites**:
-- Both macOS and Windows packages must be built first (using the respective workflows)
-- Artifacts must be available with names matching `eris-miner-macos-{version}` and `eris-miner-windows-{version}`
-
-**Outputs**:
-- GitHub release with both DMG and MSIX files attached
+Artifacts are named with the version from `package.json`:
+- `eris-miner-macos-dmg-{version}` - macOS DMG installer
+- `eris-miner-windows-msi-{version}` - Windows MSI installer
+- `eris-miner-linux-flatpak-{version}` - Linux Flatpak package
 
 ## Release Workflow
 
-Recommended workflow for creating a release:
+Releases are automated! Simply:
 
-1. **Tag the release**:
+1. **Update version** in `package.json`
+2. **Push to main**:
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git add .
+   git commit -m "Release v1.0.0"
+   git push origin main
    ```
-
-2. **Build macOS package**:
-   - Run "Package macOS" workflow with version `v1.0.0`
-   - Wait for completion
-
-3. **Build Windows package**:
-   - Run "Package Windows" workflow with version `v1.0.0`
-   - Wait for completion
-
-4. **Publish release**:
-   - Run "Publish Release" workflow with version `v1.0.0` and release notes
-   - This will create a GitHub release with both packages attached
+3. **Wait for CI** - The workflow will automatically:
+   - Build for all platforms
+   - Create a GitHub release
+   - Attach all installers to the release
 
 ## Local Testing
 
@@ -126,8 +124,9 @@ npm run build
 npm run make
 
 # Or package for specific platform
-npm run make:mac   # macOS
-npm run make:win    # Windows
+npm run make:mac     # macOS
+npm run make:win     # Windows
+npm run make:linux   # Linux
 ```
 
 Outputs will be in `out/make/` directory.
@@ -144,10 +143,28 @@ Code signing is **optional** but **highly recommended** for distribution. The co
 - **GitHub Actions**: Add secrets for certificates to enable signing in CI/CD
 - **Without signing**: Installers will work but users will see security warnings
 
+### GitHub Secrets for Code Signing
+
+To enable code signing in CI, configure these secrets in your repository:
+
+**macOS:**
+- `APPLE_CERTIFICATE` - Base64-encoded .p12 certificate file
+- `APPLE_CERTIFICATE_PASSWORD` - Password for the certificate
+- `APPLE_SIGNING_IDENTITY` - Certificate identity (e.g., "Developer ID Application: Your Name")
+- `APPLE_ID` - Apple ID email for notarization
+- `APPLE_ID_PASSWORD` - App-specific password for notarization
+- `APPLE_TEAM_ID` - Apple Developer Team ID
+
+**Windows:**
+- `WINDOWS_CERTIFICATE` - Base64-encoded .pfx certificate file
+- `WINDOWS_CERTIFICATE_PASSWORD` - Password for the certificate
+
 ## Notes
 
 - The app icon (`eris_token_app_icon.png`) is used for both the app bundle and installers
-- Windows MSIX packaging requires WiX Toolset (automatically installed in GitHub Actions)
+- Platform-specific icons: `.icns` for macOS, `.ico` for Windows
+- Windows MSI packaging requires WiX Toolset (automatically installed in GitHub Actions)
 - macOS DMG creation requires macOS (automatically available in GitHub Actions macOS runners)
+- Linux Flatpak uses the `org.eris.miner.yml` manifest
 - Code signing configuration is optional - builds will work without certificates
 

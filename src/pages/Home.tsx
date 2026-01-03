@@ -27,6 +27,35 @@ let sharedRpcManager: RpcManager | null = null;
 // Track dismissed error messages across component remounts
 const dismissedErrors = new Set<string>();
 
+// Format hashrate with appropriate unit (h/s, kh/s, mh/s, gh/s)
+function formatHashRate(hashesPerSecond: number): string {
+  if (hashesPerSecond >= 1_000_000_000) {
+    // Giga hashes per second
+    return `${(hashesPerSecond / 1_000_000_000).toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    })} GH/s`;
+  } else if (hashesPerSecond >= 1_000_000) {
+    // Mega hashes per second
+    return `${(hashesPerSecond / 1_000_000).toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    })} MH/s`;
+  } else if (hashesPerSecond >= 1_000) {
+    // Kilo hashes per second
+    return `${(hashesPerSecond / 1_000).toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    })} kH/s`;
+  } else {
+    // Hashes per second
+    return `${hashesPerSecond.toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    })} H/s`;
+  }
+}
+
 export default function Home() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [chains, setChains] = useState<Record<string, Chain>>({});
@@ -397,24 +426,43 @@ export default function Home() {
                     <Grid item xs={6} sm={4} md={2.4}>
                       <Box>
                         <Typography variant="body2" color="text.secondary">
-                          Hash Rate
+                          Hash Rate {stats.gpuEnabled && '(Combined)'}
                         </Typography>
                         <Typography variant="h5">
-                          {(stats.hashesPerSecond / 1000).toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })}{' '}
-                          kH/s
+                          {formatHashRate(stats.hashesPerSecond)}
                         </Typography>
+                        {stats.gpuEnabled && (
+                          <>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              CPU: {formatHashRate(stats.hashesPerSecond - (stats.gpuHashesPerSecond || 0))}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              GPU: {stats.gpuHashesPerSecond > 0 ? formatHashRate(stats.gpuHashesPerSecond) : '0.00 H/s'}
+                            </Typography>
+                          </>
+                        )}
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={4} md={2.4}>
                       <Box>
                         <Typography variant="body2" color="text.secondary">
-                          Total Hashes
+                          Total Hashes {stats.gpuEnabled && '(Combined)'}
                         </Typography>
                         <Typography variant="h5">
                           {stats.totalHashes.toLocaleString()}
                         </Typography>
+                        {stats.gpuEnabled && (
+                          <>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              CPU: {(stats.totalHashes - (stats.gpuTotalHashes || 0)).toLocaleString()}
+                            </Typography>
+                            {stats.gpuTotalHashes > 0 && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                GPU: {stats.gpuTotalHashes.toLocaleString()}
+                              </Typography>
+                            )}
+                          </>
+                        )}
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={4} md={2.4}>

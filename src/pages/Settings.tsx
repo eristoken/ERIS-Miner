@@ -14,12 +14,22 @@ import {
   Select,
   InputAdornment,
   IconButton,
+  FormControlLabel,
+  Switch,
+  Divider,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { Settings as SettingsType, Chain, Contracts } from '../types';
 import { addLog } from './consoleUtils';
+
+interface GPUInfo {
+  available: boolean;
+  maxWorkgroupSize: number;
+  maxInvocationsPerWorkgroup: number;
+  adapterInfo?: string;
+}
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
@@ -28,6 +38,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
+  const [gpuInfo, setGpuInfo] = useState<GPUInfo | null>(null);
   
   // Get available CPU threads
   const availableThreads = navigator.hardwareConcurrency || 1;
@@ -35,7 +46,56 @@ export default function Settings() {
 
   useEffect(() => {
     loadData();
+    detectGPU();
   }, []);
+
+  const detectGPU = async () => {
+    try {
+      if (!navigator.gpu) {
+        setGpuInfo({
+          available: false,
+          maxWorkgroupSize: 0,
+          maxInvocationsPerWorkgroup: 0,
+        });
+        return;
+      }
+
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        setGpuInfo({
+          available: false,
+          maxWorkgroupSize: 0,
+          maxInvocationsPerWorkgroup: 0,
+        });
+        return;
+      }
+
+      // Get adapter limits
+      const limits = adapter.limits;
+      const maxWorkgroupSize = limits.maxComputeWorkgroupSizeX || 256;
+      const maxInvocations = limits.maxComputeInvocationsPerWorkgroup || 256;
+
+      // Try to get adapter info (may not be available in all browsers)
+      let adapterInfo = 'Unknown GPU';
+      if (adapter.info) {
+        adapterInfo = `${adapter.info.vendor || 'Unknown'} ${adapter.info.architecture || ''}`.trim() || 'Unknown GPU';
+      }
+
+      setGpuInfo({
+        available: true,
+        maxWorkgroupSize,
+        maxInvocationsPerWorkgroup: maxInvocations,
+        adapterInfo,
+      });
+    } catch (err: any) {
+      console.error('Failed to detect GPU:', err);
+      setGpuInfo({
+        available: false,
+        maxWorkgroupSize: 0,
+        maxInvocationsPerWorkgroup: 0,
+      });
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -288,6 +348,88 @@ export default function Settings() {
               />
             </Grid>
 
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                GPU Mining (WebGPU)
+              </Typography>
+            </Grid>
+
+            <Grid item xs={12}>
+              {gpuInfo && (
+                <Box sx={{ mb: 2, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                  {gpuInfo.available ? (
+                    <>
+                      <Typography variant="body2" color="success.main" sx={{ mb: 1 }}>
+                        ✓ WebGPU Available
+                      </Typography>
+                      {gpuInfo.adapterInfo && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                          GPU: {gpuInfo.adapterInfo}
+                        </Typography>
+                      )}
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        Max Workgroup Size: {gpuInfo.maxWorkgroupSize} threads
+                        {gpuInfo.maxInvocationsPerWorkgroup !== gpuInfo.maxWorkgroupSize && 
+                          ` (Max Invocations: ${gpuInfo.maxInvocationsPerWorkgroup})`}
+                      </Typography>
+                    </>
+                  ) : (
+                    <Typography variant="body2" color="error.main">
+                      ✗ WebGPU Not Available
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </Grid>
+
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={settings.gpu_mining_enabled || false}
+                    onChange={(e) => handleChange('gpu_mining_enabled', e.target.checked)}
+                    disabled={!gpuInfo?.available}
+                  />
+                }
+                label="Enable GPU Mining"
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, ml: 4.5 }}>
+                Use WebGPU to accelerate mining on supported GPUs. Requires a browser/Electron with WebGPU support.
+                {!gpuInfo?.available && ' WebGPU is not available on this system.'}
+              </Typography>
+            </Grid>
+
+            {settings.gpu_mining_enabled && (
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="GPU Workgroup Size"
+                  type="number"
+                  value={settings.gpu_workgroup_size || 256}
+                  onChange={(e) => handleChange('gpu_workgroup_size', parseInt(e.target.value) || 256)}
+                  margin="normal"
+                  inputProps={{ 
+                    min: 64, 
+                    max: gpuInfo?.maxWorkgroupSize || 1024, 
+                    step: 64 
+                  }}
+                  helperText={
+                    gpuInfo?.available
+                      ? `Number of parallel threads per GPU workgroup (64-${gpuInfo.maxWorkgroupSize}, recommended: ${Math.min(256, gpuInfo.maxWorkgroupSize)})`
+                      : 'Number of parallel threads per GPU workgroup (64-1024, recommended: 256)'
+                  }
+                />
+              </Grid>
+            )}
+
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                RPC Rate Limits
+              </Typography>
+            </Grid>
+
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
@@ -297,7 +439,33 @@ export default function Settings() {
                 onChange={(e) => handleChange('rpc_rate_limit_ms', parseInt(e.target.value) || 0)}
                 margin="normal"
                 inputProps={{ min: 0 }}
-                helperText="0 to disable rate limiting"
+                helperText="Minimum interval between general RPC calls (0 to disable)"
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Submission Rate Limit (ms)"
+                type="number"
+                value={settings.submission_rate_limit_ms}
+                onChange={(e) => handleChange('submission_rate_limit_ms', parseInt(e.target.value) || 0)}
+                margin="normal"
+                inputProps={{ min: 0 }}
+                helperText="Delay between solution submissions (0 to disable)"
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Challenge Poll Interval (ms)"
+                type="number"
+                value={settings.challenge_poll_interval_ms}
+                onChange={(e) => handleChange('challenge_poll_interval_ms', parseInt(e.target.value) || 0)}
+                margin="normal"
+                inputProps={{ min: 0 }}
+                helperText="Minimum interval between challenge polling calls"
               />
             </Grid>
 

@@ -1,6 +1,6 @@
 {
   "name": "eris-miner",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "ERC-918 Token Miner with Electron, React, TypeScript, and Material-UI",
   "main": "dist-electron/main.js",
   "author": "",
@@ -19,7 +19,8 @@
     "package:win": "electron-forge package --platform=win32",
     "make": "electron-forge make",
     "make:mac": "electron-forge make --platform=darwin",
-    "make:win": "electron-forge make --platform=win32"
+    "make:win": "electron-forge make --platform=win32",
+    "make:linux": "electron-forge make --platform=linux"
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",
