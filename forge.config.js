@@ -43,6 +43,9 @@ const config = {
           section: 'utils',
           priority: 'optional',
           bin: 'eris-miner',
+          scripts: {
+            postinst: 'postinst.sh',
+          },
         },
       },
     },
@@ -53,6 +56,99 @@ const config = {
       config: {},
     },
   ],
+  hooks: {
+    packageAfterCopy: async (config, buildPath, electronVersion, platform, arch) => {
+      // For Linux builds, copy wrapper script and post-install script
+      if (platform === 'linux') {
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Copy wrapper script
+        const wrapperPath = path.join(__dirname, 'eris-miner-wrapper.sh');
+        const targetWrapperPath = path.join(buildPath, 'eris-miner-wrapper.sh');
+        if (fs.existsSync(wrapperPath)) {
+          fs.copyFileSync(wrapperPath, targetWrapperPath);
+          fs.chmodSync(targetWrapperPath, 0o755);
+          console.log('Copied wrapper script to build directory');
+        }
+        
+        // Copy post-install script
+        const postinstPath = path.join(__dirname, 'postinst.sh');
+        const targetPostinstPath = path.join(buildPath, 'postinst.sh');
+        if (fs.existsSync(postinstPath)) {
+          fs.copyFileSync(postinstPath, targetPostinstPath);
+          fs.chmodSync(targetPostinstPath, 0o755);
+          console.log('Copied post-install script to build directory');
+        }
+      }
+    },
+    packageAfterMake: async (config, makeResults) => {
+      // After DEB package is created, modify the desktop file inside the DEB
+      const fs = require('fs');
+      const path = require('path');
+      const { execSync } = require('child_process');
+      
+      for (const makeResult of makeResults) {
+        if (makeResult.platform === 'linux' && makeResult.artifacts) {
+          for (const artifact of makeResult.artifacts) {
+            if (artifact.endsWith('.deb')) {
+              console.log('Modifying desktop file in DEB package:', artifact);
+              try {
+                // Extract DEB
+                const tempDir = path.join(path.dirname(artifact), 'deb-temp');
+                if (fs.existsSync(tempDir)) {
+                  fs.rmSync(tempDir, { recursive: true, force: true });
+                }
+                fs.mkdirSync(tempDir, { recursive: true });
+                
+                // Extract control.tar.gz and data.tar.gz
+                execSync(`cd "${tempDir}" && ar x "${artifact}"`, { stdio: 'inherit' });
+                
+                // Extract data.tar.gz to modify desktop file
+                const dataExtractDir = path.join(tempDir, 'data');
+                fs.mkdirSync(dataExtractDir, { recursive: true });
+                execSync(`cd "${dataExtractDir}" && tar -xzf "${tempDir}/data.tar.gz"`, { stdio: 'inherit' });
+                
+                // Modify desktop file
+                const desktopFile = path.join(dataExtractDir, 'usr/share/applications/eris-miner.desktop');
+                if (fs.existsSync(desktopFile)) {
+                  let desktopContent = fs.readFileSync(desktopFile, 'utf8');
+                  // Check if Exec line already has XDG_SESSION_TYPE
+                  if (!desktopContent.includes('XDG_SESSION_TYPE=x11')) {
+                    // Modify Exec line to include env XDG_SESSION_TYPE=x11
+                    desktopContent = desktopContent.replace(
+                      /^Exec=(.*)$/m,
+                      'Exec=env XDG_SESSION_TYPE=x11 $1'
+                    );
+                    fs.writeFileSync(desktopFile, desktopContent);
+                    console.log('Modified desktop file to include XDG_SESSION_TYPE=x11');
+                    
+                    // Repackage data.tar.gz
+                    execSync(`cd "${dataExtractDir}" && tar -czf "${tempDir}/data.tar.gz" usr`, { stdio: 'inherit' });
+                    
+                    // Repackage DEB
+                    execSync(`cd "${tempDir}" && ar r "${artifact}" control.tar.gz data.tar.gz debian-binary`, { stdio: 'inherit' });
+                    
+                    console.log('Successfully modified DEB package');
+                  } else {
+                    console.log('Desktop file already has XDG_SESSION_TYPE=x11');
+                  }
+                } else {
+                  console.warn('Desktop file not found in DEB package');
+                }
+                
+                // Cleanup
+                fs.rmSync(tempDir, { recursive: true, force: true });
+              } catch (error) {
+                console.error('Error modifying DEB package:', error.message);
+                console.log('Falling back to post-install script method');
+              }
+            }
+          }
+        }
+      }
+    },
+  },
 };
 
 // Allow environment variables or CI to override certificate settings

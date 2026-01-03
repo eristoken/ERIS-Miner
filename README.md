@@ -107,18 +107,16 @@ sudo apt install ./eris-miner_*_amd64.deb
 ```
 
 3. Run the application:
-   - **From desktop menu**: Click on "ERIS Miner" in your application menu
+   - **From desktop menu**: Click on "ERIS Miner" in your application menu (automatically configured for X11 on Wayland systems)
    - **From command line**: 
 ```bash
 eris-miner
 ```
 
-**Note for Raspberry Pi/Wayland users**: If the window doesn't appear, you need to run with X11:
+**Note for Raspberry Pi/Wayland users**: The desktop launcher is automatically configured to use X11. If you launch from the command line and the window doesn't appear, run with:
 ```bash
 XDG_SESSION_TYPE=x11 eris-miner
 ```
-
-Or create a desktop launcher that sets this automatically (see troubleshooting section below).
 
 ### Raspberry Pi Notes
 
@@ -148,7 +146,9 @@ Or create a launcher script:
 
 If the logs show "Window shown successfully" and "Visible: true" but no window appears:
 
-1. **Wayland Issue** (Most Common): If `XDG_SESSION_TYPE: wayland`, you must run with X11. The app cannot automatically override this after Electron starts.
+1. **Wayland Issue** (Most Common): If `XDG_SESSION_TYPE: wayland`, you must run with X11.
+
+   **Note**: The desktop launcher is automatically configured to use X11 in newer builds. If you're using an older build or launching from command line:
 
    **Solution 1: Command line (temporary)**
    ```bash
