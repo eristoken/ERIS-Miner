@@ -47,6 +47,9 @@ const config = {
           files: [
             ['flatpak/eris-miner-launcher', '/bin/eris-miner-launcher'],
           ],
+          symlinks: [
+            ['/bin/eris-miner-launcher', '/bin/electron-wrapper'],
+          ],
         },
       },
     },
