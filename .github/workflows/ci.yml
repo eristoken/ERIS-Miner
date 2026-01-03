@@ -513,8 +513,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Package for Linux
+      - name: Package for Linux (x64)
         run: npm run make:linux
+      
+      - name: Package for Linux (arm64 - Raspberry Pi)
+        run: npm run make:linux-arm64
       
       - name: List output directory
         run: |
@@ -542,11 +545,18 @@ jobs:
             echo "package.json not found, using commit hash: ${GITHUB_SHA:0:7}"
           fi
       
-      - name: Upload Flatpak artifact
+      - name: Upload Flatpak artifact (x64)
         uses: actions/upload-artifact@v4
         with:
-          name: eris-miner-linux-flatpak-${{ steps.version.outputs.version }}
-          path: out/make/**/*.flatpak
+          name: eris-miner-linux-x64-flatpak-${{ steps.version.outputs.version }}
+          path: out/make/flatpak/x64/*.flatpak
+          retention-days: 30
+      
+      - name: Upload Flatpak artifact (arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: eris-miner-linux-arm64-flatpak-${{ steps.version.outputs.version }}
+          path: out/make/flatpak/arm64/*.flatpak
           retention-days: 30
 
   publish-release:
@@ -595,12 +605,19 @@ jobs:
           name: eris-miner-windows-msi-${{ steps.version.outputs.version }}
           path: ./artifacts/windows
       
-      - name: Download Linux Flatpak artifact
+      - name: Download Linux x64 Flatpak artifact
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: eris-miner-linux-flatpak-${{ steps.version.outputs.version }}
-          path: ./artifacts/linux
+          name: eris-miner-linux-x64-flatpak-${{ steps.version.outputs.version }}
+          path: ./artifacts/linux-x64
+      
+      - name: Download Linux arm64 Flatpak artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: eris-miner-linux-arm64-flatpak-${{ steps.version.outputs.version }}
+          path: ./artifacts/linux-arm64
       
       - name: Verify artifacts are extracted
         run: |
@@ -610,8 +627,11 @@ jobs:
           echo "Checking Windows artifacts..."
           find ./artifacts/windows -type f 2>/dev/null || echo "No Windows artifacts found"
           echo ""
-          echo "Checking Linux artifacts..."
-          find ./artifacts/linux -type f 2>/dev/null || echo "No Linux artifacts found"
+          echo "Checking Linux x64 artifacts..."
+          find ./artifacts/linux-x64 -type f 2>/dev/null || echo "No Linux x64 artifacts found"
+          echo ""
+          echo "Checking Linux arm64 artifacts..."
+          find ./artifacts/linux-arm64 -type f 2>/dev/null || echo "No Linux arm64 artifacts found"
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -626,11 +646,13 @@ jobs:
             ### Downloads
             - **macOS**: Download the DMG file below
             - **Windows**: Download the MSI file below
-            - **Linux**: Download the Flatpak file below
+            - **Linux (x64)**: Download the Flatpak file below
+            - **Linux (arm64/Raspberry Pi)**: Download the arm64 Flatpak file below
           files: |
             ./artifacts/macos/*.dmg
             ./artifacts/windows/**/*.msi
-            ./artifacts/linux/**/*.flatpak
+            ./artifacts/linux-x64/*.flatpak
+            ./artifacts/linux-arm64/*.flatpak
           draft: false
           prerelease: false
         env:

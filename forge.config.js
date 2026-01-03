@@ -32,7 +32,7 @@ const config = {
       name: '@electron-forge/maker-flatpak',
       config: {
         options: {
-          id: 'org.eris.miner',
+          id: 'org.eristoken.miner',
           categories: ['Network', 'Finance'],
           mimeType: [],
         },
