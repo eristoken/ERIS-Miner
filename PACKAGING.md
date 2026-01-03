@@ -7,7 +7,7 @@ This document describes the Electron Forge packaging setup and GitHub Actions wo
 The project uses Electron Forge for packaging the application into distributable formats:
 - **macOS**: DMG files
 - **Windows**: MSI files (via WiX)
-- **Linux**: DEB packages (Debian/Ubuntu)
+- **Linux**: DEB packages (Debian/Ubuntu) and Snap packages
 
 ### Installation
 
@@ -16,6 +16,7 @@ Dependencies are already installed via `npm install`. The following packages are
 - `@electron-forge/maker-dmg` - macOS DMG maker
 - `@electron-forge/maker-wix` - Windows MSI maker
 - `@electron-forge/maker-deb` - Linux DEB maker
+- `@electron-forge/maker-snap` - Linux Snap maker
 - `@electron-forge/plugin-auto-unpack-natives` - Native module handling
 
 ### Build Process
@@ -28,7 +29,7 @@ Dependencies are already installed via `npm install`. The following packages are
    - Creates an unpacked application bundle
 
 3. **Make**: `npm run make` (or `make:mac` / `make:win` / `make:linux`)
-   - Creates distributable installers (DMG for macOS, MSI for Windows, DEB for Linux)
+   - Creates distributable installers (DMG for macOS, MSI for Windows, DEB and Snap for Linux)
    - Outputs to `out/make/`
 
 ### Configuration
@@ -73,7 +74,7 @@ The workflow consists of the following jobs:
   - Downloads build artifacts from the build job
   - Supports code signing with Windows certificates
 
-#### 4. Package Linux (`package-linux-x64` and `package-linux-arm64`)
+#### 4. Package Linux DEB (`package-linux-x64` and `package-linux-arm64`)
 - **Runner**: Ubuntu (x64 and arm64 runners)
 - **Purpose**: Create DEB packages for x64 and ARM64 architectures
 - **Features**:
@@ -81,7 +82,16 @@ The workflow consists of the following jobs:
   - Includes desktop integration (icon, categories)
   - Supports both x64 and ARM64 (Raspberry Pi) architectures
 
-#### 5. Publish Release (`publish-release`)
+#### 5. Package Linux Snap (`package-linux-x64-snap` and `package-linux-arm64-snap`)
+- **Runner**: Ubuntu (x64 and arm64 runners)
+- **Purpose**: Create Snap packages for x64 and ARM64 architectures
+- **Features**:
+  - Uses `@electron-forge/maker-snap` for Snap package generation
+  - Includes desktop integration with X11 environment variable for Wayland compatibility
+  - Supports both x64 and ARM64 (Raspberry Pi) architectures
+  - Requires `snapcraft` to be installed on the runner
+
+#### 6. Publish Release (`publish-release`)
 - **Runner**: Ubuntu
 - **Purpose**: Create GitHub release with all platform artifacts
 - **Features**:
@@ -96,6 +106,8 @@ Artifacts are named with the version from `package.json`:
 - `eris-miner-windows-msi-{version}` - Windows MSI installer
 - `eris-miner-linux-x64-deb-{version}` - Linux DEB package (x64)
 - `eris-miner-linux-arm64-deb-{version}` - Linux DEB package (ARM64/Raspberry Pi)
+- `eris-miner-linux-x64-snap-{version}` - Linux Snap package (x64)
+- `eris-miner-linux-arm64-snap-{version}` - Linux Snap package (ARM64/Raspberry Pi)
 
 ## Release Workflow
 
@@ -167,5 +179,7 @@ To enable code signing in CI, configure these secrets in your repository:
 - Windows MSI packaging requires WiX Toolset (automatically installed in GitHub Actions)
 - macOS DMG creation requires macOS (automatically available in GitHub Actions macOS runners)
 - Linux DEB packages are built using `@electron-forge/maker-deb` and can be installed with `sudo dpkg -i` or double-clicked
+- Linux Snap packages are built using `@electron-forge/maker-snap` and require `snapcraft` (automatically installed in GitHub Actions)
+- Snap packages can be installed with `sudo snap install --dangerous <snap-file>` or published to the Snap Store
 - Code signing configuration is optional - builds will work without certificates
 
