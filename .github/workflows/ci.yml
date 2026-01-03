@@ -713,12 +713,12 @@ jobs:
             - **macOS**: Download the DMG file below
             - **Windows**: Download the MSI file below
             - **Linux (x64)**: Download the Flatpak file below
-            - **Linux (arm64/Raspberry Pi)**: Download the arm64 Flatpak file below
+            - **Linux (arm64/Raspberry Pi)**: Download the aarch64 Flatpak file below
           files: |
             ./artifacts/macos/*.dmg
             ./artifacts/windows/**/*.msi
             ./artifacts/linux-x64/*.flatpak
-            ./artifacts/linux-arm64/*.flatpak
+            ./artifacts/linux-aarch64/*.flatpak
           draft: false
           prerelease: false
         env:
