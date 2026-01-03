@@ -718,7 +718,7 @@ jobs:
             ./artifacts/macos/*.dmg
             ./artifacts/windows/**/*.msi
             ./artifacts/linux-x64/*.flatpak
-            ./artifacts/linux-aarch64/*.flatpak
+            ./artifacts/linux-arm64/*.flatpak
           draft: false
           prerelease: false
         env:
