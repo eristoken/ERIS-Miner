@@ -504,66 +504,22 @@ jobs:
           name: build-artifacts
           path: .
       
+      - name: Install Flatpak dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder elfutils
+          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      
       - name: Install dependencies
         run: npm ci
       
       - name: Package for Linux
         run: npm run make:linux
       
-      - name: Install Flatpak and dependencies
+      - name: List output directory
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
-      
-      - name: Prepare Flatpak build directory
-        run: |
-          mkdir -p flatpak-build
-          # Find the packaged Linux app
-          # Electron Forge packages Linux apps in out/eris-miner-linux-*/ or out/ERIS-Miner-linux-*/
-          APP_DIR=$(find out -maxdepth 2 -type d \( -name "eris-miner-linux-*" -o -name "ERIS-Miner-linux-*" \) | head -1)
-          if [ -z "$APP_DIR" ]; then
-            # Try looking in out/make
-            APP_DIR=$(find out/make -maxdepth 2 -type d \( -name "eris-miner-linux-*" -o -name "ERIS-Miner-linux-*" \) | head -1)
-          fi
-          if [ -z "$APP_DIR" ]; then
-            echo "Error: Could not find packaged Linux app"
-            echo "Searching in out directory:"
-            find out -type d | head -20
-            echo ""
-            echo "Contents of out:"
-            ls -la out/ || true
-            echo ""
-            echo "Contents of out/make (if exists):"
-            ls -la out/make/ || true
-            exit 1
-          fi
-          echo "Found app directory: $APP_DIR"
-          
-          # List contents for debugging
-          echo "Contents of app directory:"
-          ls -la "$APP_DIR"
-          
-          # Create tarball for Flatpak
-          cd "$APP_DIR"
-          tar czf ../../flatpak-build/eris-miner-linux.tar.gz .
-          cd ../..
-          
-          # Copy icon
-          if [ -f eris_token_app_icon.png ]; then
-            cp eris_token_app_icon.png flatpak-build/
-          elif [ -f public/eris_token_app_icon.png ]; then
-            cp public/eris_token_app_icon.png flatpak-build/eris_token_app_icon.png
-          else
-            echo "Warning: Icon not found, continuing without icon..."
-          fi
-      
-      - name: Build Flatpak
-        run: |
-          cd flatpak-build
-          flatpak-builder --repo=repo --force-clean build-dir ../org.eris.miner.yml
-          flatpak build-bundle repo eris-miner.flatpak org.eris.miner
+          echo "Contents of out/make:"
+          find out/make -type f | head -50
       
       - name: Determine version for artifacts
         id: version
@@ -590,7 +546,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eris-miner-linux-flatpak-${{ steps.version.outputs.version }}
-          path: flatpak-build/*.flatpak
+          path: out/make/**/*.flatpak
           retention-days: 30
 
   publish-release:

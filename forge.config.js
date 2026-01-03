@@ -29,8 +29,14 @@ const config = {
       },
     },
     {
-      name: '@electron-forge/maker-zip',
-      platforms: ['linux'],
+      name: '@electron-forge/maker-flatpak',
+      config: {
+        options: {
+          id: 'org.eris.miner',
+          categories: ['Network', 'Finance'],
+          mimeType: [],
+        },
+      },
     },
   ],
   plugins: [

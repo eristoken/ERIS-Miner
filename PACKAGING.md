@@ -77,9 +77,8 @@ The workflow consists of the following jobs:
 - **Runner**: Ubuntu
 - **Purpose**: Create Flatpak package
 - **Features**:
-  - Uses `org.eris.miner.yml` Flatpak manifest
-  - Bundles the Electron app as a Flatpak
-  - Includes desktop integration (icon, .desktop file)
+  - Uses `@electron-forge/maker-flatpak` for Flatpak generation
+  - Includes desktop integration (icon, categories)
 
 #### 5. Publish Release (`publish-release`)
 - **Runner**: Ubuntu
@@ -165,6 +164,6 @@ To enable code signing in CI, configure these secrets in your repository:
 - Platform-specific icons: `.icns` for macOS, `.ico` for Windows
 - Windows MSI packaging requires WiX Toolset (automatically installed in GitHub Actions)
 - macOS DMG creation requires macOS (automatically available in GitHub Actions macOS runners)
-- Linux Flatpak uses the `org.eris.miner.yml` manifest
+- Linux Flatpak is built using `@electron-forge/maker-flatpak`
 - Code signing configuration is optional - builds will work without certificates
 
