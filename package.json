@@ -1,6 +1,6 @@
 {
   "name": "eris-miner",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "ERC-918 Token Miner with Electron, React, TypeScript, and Material-UI",
   "main": "dist-electron/main.js",
   "author": "",
