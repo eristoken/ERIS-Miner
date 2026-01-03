@@ -380,10 +380,117 @@ export class Miner {
       });
 
       this.log('info', `Transaction submitted: ${tx.hash}`);
-      const receipt = await tx.wait();
-      this.log('success', `Solution confirmed! Block: ${receipt.blockNumber}`);
+      
+      // Wait for receipt with timeout to prevent hanging
+      // Default timeout: 5 minutes (300 seconds) - should be enough for most networks
+      const receiptTimeout = 300000; // 5 minutes in milliseconds
+      let receipt: ethers.ContractTransactionReceipt | null = null;
+      
+      // Start periodic status logging for pending transactions
+      const statusCheckInterval = 30000; // Check every 30 seconds
+      let statusCheckCount = 0;
+      const maxStatusChecks = Math.floor(receiptTimeout / statusCheckInterval);
+      const statusLogger = setInterval(() => {
+        statusCheckCount++;
+        if (statusCheckCount <= maxStatusChecks) {
+          this.log('info', `Transaction ${tx.hash} still pending... (${statusCheckCount * 30}s elapsed)`);
+        }
+      }, statusCheckInterval);
+      
+      try {
+        // Create a timeout promise
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            clearInterval(statusLogger);
+            reject(new Error(`Transaction receipt timeout after ${receiptTimeout / 1000} seconds. Transaction hash: ${tx.hash}`));
+          }, receiptTimeout);
+        });
+        
+        // Race between receipt and timeout
+        receipt = await Promise.race([
+          tx.wait().then((r) => {
+            clearInterval(statusLogger);
+            return r;
+          }),
+          timeoutPromise
+        ]) as ethers.ContractTransactionReceipt;
+        
+        this.log('success', `Solution confirmed! Block: ${receipt.blockNumber}`);
+      } catch (waitError: any) {
+        clearInterval(statusLogger); // Always clear interval on error
+        
+        // Check if this is a timeout error
+        if (waitError.message && waitError.message.includes('timeout')) {
+          this.log('warn', `Transaction receipt timeout for ${tx.hash} after ${receiptTimeout / 1000} seconds. Checking status manually...`);
+          
+          // Try to get receipt manually as fallback
+          try {
+            const provider = contractWithProvider.runner?.provider || this.provider;
+            if (provider) {
+              // Wait a bit more and try to get receipt
+              await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 more seconds
+              
+              const manualReceipt = await provider.getTransactionReceipt(tx.hash);
+              if (manualReceipt) {
+                receipt = manualReceipt as ethers.ContractTransactionReceipt;
+                this.log('success', `Solution confirmed via manual check! Block: ${receipt.blockNumber}`);
+              } else {
+                // Check if transaction is still pending
+                const txResponse = await provider.getTransaction(tx.hash);
+                if (txResponse && txResponse.blockNumber === null) {
+                  this.log('error', `Transaction ${tx.hash} is still pending in mempool after timeout. It may have been dropped or is stuck.`);
+                } else {
+                  this.log('error', `Transaction ${tx.hash} status unknown after timeout. No receipt available.`);
+                }
+                // Transaction is still pending - return false so it can be retried
+                return false;
+              }
+            } else {
+              this.log('error', `Transaction ${tx.hash} receipt timeout and no provider available for manual check.`);
+              return false;
+            }
+          } catch (manualError: any) {
+            this.log('error', `Failed to manually check transaction receipt: ${manualError.message}`);
+            return false;
+          }
+        } else {
+          // Some other error occurred
+          throw waitError; // Re-throw to be handled by outer catch block
+        }
+      }
+      
+      // Ensure we have a receipt before proceeding
+      if (!receipt) {
+        this.log('error', `No receipt available for transaction ${tx.hash}`);
+        return false;
+      }
+      
+      // Check if transaction was reverted (status: 0)
+      if (receipt.status === 0) {
+        this.log('warn', `Transaction ${tx.hash} was reverted (status: 0). Solution may be invalid or already submitted.`);
+        // Try to extract revert reason if available
+        try {
+          const provider = contractWithProvider.runner?.provider || this.provider;
+          if (provider) {
+            // Try to call the contract to see if we can get a revert reason
+            // This is best-effort, may not always work
+            const code = await provider.call({
+              to: contractWithProvider.target,
+              data: tx.data,
+            });
+            if (code === '0x') {
+              this.log('info', 'Transaction reverted but no revert reason available');
+            }
+          }
+        } catch (revertError: any) {
+          // Ignore errors when trying to get revert reason
+        }
+        return false; // Transaction failed, don't process receipt
+      }
 
       // Parse events from receipt - wrap in try-catch to prevent errors from stopping miner
+      // CRITICAL: Always process receipt and send tier notifications, even if queue is long
+      let receiptProcessed = false;
       try {
         // Parse Mint event to get reward amount
         const mintEvent = receipt.logs.find((log: any) => {
@@ -532,19 +639,34 @@ export class Miner {
             this.log('success', `⚪ Neutral Mine tier awarded! Reward: ${rewardString} tokens`);
           }
           
-          // Notify UI about tier update
+          // Notify UI about tier update - CRITICAL: Always send notification
           if (this.onTierUpdate) {
-            this.onTierUpdate(detectedTier, rewardString);
+            try {
+              this.onTierUpdate(detectedTier, rewardString);
+              this.log('info', `Tier notification sent: ${detectedTier}, ${rewardString} tokens`);
+            } catch (notificationError: any) {
+              this.log('error', `Failed to send tier notification: ${notificationError.message}`);
+            }
+          } else {
+            this.log('warn', 'onTierUpdate callback not set - tier notification not sent!');
           }
         } else {
           // If no tier event found, default to NeutralMine (base tier)
           detectedTier = 'NeutralMine';
           this.stats.lastTier = detectedTier;
           this.neutralMineCount++;
-          if (this.onTierUpdate && finalRewardAmount > BigInt(0)) {
-            this.onTierUpdate(detectedTier, rewardString);
+          // Always send notification even if reward is 0 to ensure UI is updated
+          if (this.onTierUpdate) {
+            try {
+              this.onTierUpdate(detectedTier, rewardString);
+              this.log('info', `Tier notification sent (default): ${detectedTier}, ${rewardString} tokens`);
+            } catch (notificationError: any) {
+              this.log('error', `Failed to send default tier notification: ${notificationError.message}`);
+            }
           }
         }
+        
+        receiptProcessed = true;
       } catch (eventParseError: any) {
         // Log error but don't fail the submission - transaction was successful
         this.log('warn', `Failed to parse events from receipt: ${eventParseError.message}. Transaction was successful.`);
@@ -553,6 +675,48 @@ export class Miner {
         // Default to NeutralMine if we can't detect tier
         this.stats.lastTier = 'NeutralMine';
         this.neutralMineCount++;
+        
+        // IMPORTANT: Still send tier notification even if parsing failed
+        // Use a default reward amount from the receipt if possible
+        try {
+          // Try to extract reward from receipt logs as fallback
+          let fallbackReward = BigInt(0);
+          if (receipt.logs && receipt.logs.length > 0) {
+            // Try to find any event with a reward field
+            for (const log of receipt.logs) {
+              try {
+                const parsed = contractWithProvider.interface.parseLog(log);
+                if (parsed && parsed.args) {
+                  const rewardArg = parsed.args.reward || parsed.args.rewardAmount || parsed.args.reward_amount;
+                  if (rewardArg != null && rewardArg !== undefined) {
+                    fallbackReward = BigInt(rewardArg.toString());
+                    break;
+                  }
+                }
+              } catch {
+                // Continue searching
+              }
+            }
+          }
+          
+          const fallbackRewardString = ethers.formatEther(fallbackReward);
+          if (this.onTierUpdate && fallbackReward > BigInt(0)) {
+            this.onTierUpdate('NeutralMine', fallbackRewardString);
+            this.log('info', `Sent fallback tier notification: NeutralMine, ${fallbackRewardString} tokens`);
+          } else if (this.onTierUpdate) {
+            // Send notification even with 0 reward to ensure UI is updated
+            this.onTierUpdate('NeutralMine', '0');
+          }
+        } catch (notificationError: any) {
+          this.log('error', `Failed to send tier notification after receipt parse error: ${notificationError.message}`);
+        }
+        
+        receiptProcessed = true;
+      }
+      
+      // Ensure receipt was processed - log if it wasn't
+      if (!receiptProcessed) {
+        this.log('error', 'Receipt processing did not complete - this should not happen!');
       }
       
       // Update stats immediately after incrementing counters
@@ -860,6 +1024,40 @@ export class Miner {
   }
 
   /**
+   * Add solution to queue, preventing duplicates and managing queue for current challenge
+   * Only caps queue if there's already a solution for the current challenge
+   */
+  private addSolutionToQueue(nonce: string, workerId: number, challenge: string): boolean {
+    // Prevent exact duplicate nonces
+    const isDuplicate = this.solutionQueue.some(s => s.nonce === nonce);
+    if (isDuplicate) {
+      this.log('info', `Duplicate solution (nonce: ${nonce}) already in queue, skipping`);
+      return false;
+    }
+    
+    // Check if there's already a solution for this challenge in the queue
+    const hasSolutionForChallenge = this.solutionQueue.some(s => 
+      s.challenge.toLowerCase() === challenge.toLowerCase()
+    );
+    
+    if (hasSolutionForChallenge) {
+      // There's already a solution for this challenge - drop the oldest one for this challenge
+      // to make room, but keep solutions for other challenges
+      const challengeIndex = this.solutionQueue.findIndex(s => 
+        s.challenge.toLowerCase() === challenge.toLowerCase()
+      );
+      if (challengeIndex >= 0) {
+        const dropped = this.solutionQueue.splice(challengeIndex, 1)[0];
+        this.log('info', `Solution for current challenge already in queue. Dropping older solution (nonce: ${dropped.nonce}) to make room for new one.`);
+      }
+    }
+    
+    // Add the new solution
+    this.solutionQueue.push({ nonce, workerId, challenge });
+    return true;
+  }
+
+  /**
    * Process solution queue with rate limiting
    * This runs in parallel with mining, submitting solutions one at a time
    */
@@ -894,10 +1092,12 @@ export class Miner {
         this.onStatsUpdate({ ...this.stats });
       }
       
-      this.log('info', `Processing solution from queue (${this.solutionQueue.length} remaining)...`);
+      const queueSize = this.solutionQueue.length;
+      this.log('info', `Processing solution from queue (${queueSize} remaining)...`);
       
       // Wrap entire processing in try-finally to ensure indicators are always cleared
       // even when solutions are skipped
+      // CRITICAL: Always process receipt completely, even when queue is long
       try {
         // Validate solution before submission - check if challenge is still current
         let shouldSkip = false;
@@ -967,9 +1167,11 @@ export class Miner {
               this.updateStats();
               this.log('success', 'Solution submitted successfully');
               
-              // Immediately refresh challenge and notify all workers
-              // This reduces stale solutions from workers still mining old challenge
-              await this.refreshChallengeAndNotifyWorkers();
+              // Refresh challenge and notify all workers, but don't let it block queue processing
+              // Use a fire-and-forget approach to prevent blocking when queue is long
+              this.refreshChallengeAndNotifyWorkers().catch((error: any) => {
+                this.log('warn', `Failed to refresh challenge after submission: ${error.message}`);
+              });
             } else {
               // Submission failed (non-fatal error like "Already rewarded")
               this.failedSolutions++;
@@ -1157,20 +1359,18 @@ export class Miner {
                 this.updateStats();
               } else if (type === 'solution') {
                 // Solution found! Add to queue and continue mining
-                this.log('success', `Solution found by CPU worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
+                const solutionChallengeValue = solutionChallenge || challenge;
+                const added = this.addSolutionToQueue(nonce, workerId, solutionChallengeValue);
                 
-                // Add solution to queue
-                this.solutionQueue.push({ 
-                  nonce, 
-                  workerId, 
-                  challenge: solutionChallenge || challenge 
-                });
-                
-                // Update stats to show solution found and pending count
-                this.stats.solutionFound = true;
-                this.stats.pendingSolutions = this.solutionQueue.length;
-                if (this.onStatsUpdate) {
-                  this.onStatsUpdate({ ...this.stats });
+                if (added) {
+                  this.log('success', `Solution found by CPU worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
+                  
+                  // Update stats to show solution found and pending count
+                  this.stats.solutionFound = true;
+                  this.stats.pendingSolutions = this.solutionQueue.length;
+                  if (this.onStatsUpdate) {
+                    this.onStatsUpdate({ ...this.stats });
+                  }
                 }
                 
                 // Workers keep mining continuously - no pause/resume needed
@@ -1206,18 +1406,17 @@ export class Miner {
                 this.updateStats();
               } else if (type === 'solution') {
                 // Solution found by GPU! Add to queue
-                this.log('success', `Solution found by GPU worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
+                const solutionChallengeValue = solutionChallenge || challenge;
+                const added = this.addSolutionToQueue(nonce, 1000 + workerId, solutionChallengeValue);
                 
-                this.solutionQueue.push({ 
-                  nonce, 
-                  workerId: 1000 + workerId, // Use high IDs for GPU workers to distinguish
-                  challenge: solutionChallenge || challenge 
-                });
-                
-                this.stats.solutionFound = true;
-                this.stats.pendingSolutions = this.solutionQueue.length;
-                if (this.onStatsUpdate) {
-                  this.onStatsUpdate({ ...this.stats });
+                if (added) {
+                  this.log('success', `Solution found by GPU worker ${workerId}! Nonce: ${nonce} (queued for submission)`);
+                  
+                  this.stats.solutionFound = true;
+                  this.stats.pendingSolutions = this.solutionQueue.length;
+                  if (this.onStatsUpdate) {
+                    this.onStatsUpdate({ ...this.stats });
+                  }
                 }
               } else if (type === 'info') {
                 this.log('info', `GPU Worker: ${message}`);
