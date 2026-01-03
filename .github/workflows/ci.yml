@@ -605,13 +605,13 @@ jobs:
       - name: Verify artifacts are extracted
         run: |
           echo "Checking macOS artifacts..."
-          ls -la ./artifacts/macos/ || echo "No macOS artifacts found"
+          find ./artifacts/macos -type f 2>/dev/null || echo "No macOS artifacts found"
           echo ""
           echo "Checking Windows artifacts..."
-          ls -la ./artifacts/windows/ || echo "No Windows artifacts found"
+          find ./artifacts/windows -type f 2>/dev/null || echo "No Windows artifacts found"
           echo ""
           echo "Checking Linux artifacts..."
-          ls -la ./artifacts/linux/ || echo "No Linux artifacts found"
+          find ./artifacts/linux -type f 2>/dev/null || echo "No Linux artifacts found"
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -630,7 +630,7 @@ jobs:
           files: |
             ./artifacts/macos/*.dmg
             ./artifacts/windows/**/*.msi
-            ./artifacts/linux/*.flatpak
+            ./artifacts/linux/**/*.flatpak
           draft: false
           prerelease: false
         env:
