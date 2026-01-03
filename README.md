@@ -137,13 +137,47 @@ Or create a launcher script:
 
 **Note**: Future builds will automatically disable GPU acceleration on ARM/Raspberry Pi systems.
 
+**Window Not Appearing (Visible but Not Showing)**
+
+If the logs show "Window shown successfully" and "Visible: true" but no window appears:
+
+1. **Wayland Issue** (Most Common): If `XDG_SESSION_TYPE: wayland`, the app will automatically force X11 in future builds. For current builds, run with:
+   ```bash
+   XDG_SESSION_TYPE=x11 eris-miner
+   ```
+   
+   **Note**: Future builds will automatically handle this, but you can also create a launcher script:
+   ```bash
+   # Create ~/eris-miner-launcher.sh
+   #!/bin/bash
+   XDG_SESSION_TYPE=x11 /usr/bin/eris-miner "$@"
+   
+   chmod +x ~/eris-miner-launcher.sh
+   ```
+
+2. **Window Off-Screen**: The window might be positioned off-screen:
+   ```bash
+   # Try resetting window position
+   rm -rf ~/.config/eris-miner
+   # Then restart the app
+   ```
+
+3. **Window Behind Others**: Try:
+   - Alt+Tab to cycle through windows
+   - Check all workspaces/desktops
+   - Try `wmctrl -a "ERIS Miner"` to focus it
+
+4. **Force Window to Appear**: If using a window manager, try:
+   ```bash
+   # Install wmctrl if needed
+   sudo apt-get install wmctrl
+   # Then after starting eris-miner:
+   wmctrl -a "ERIS Miner"
+   ```
+
 **X11 Warning Messages**
 
-If you see `XGetWindowAttributes failed for window 1` - this is usually a harmless warning. The window should still appear. If the window doesn't appear:
-- Check if it's behind other windows (try Alt+Tab)
-- Check if it opened on a different workspace/desktop
-- Verify X11 is working: `xeyes` or `xclock` should work
-- Check window manager compatibility
+If you see `XGetWindowAttributes failed for window 1` - this is usually a harmless warning. The window should still appear. If the window doesn't appear, see troubleshooting above.
 
 1. **Check Display Server**: Ensure you're using X11, not Wayland:
    ```bash

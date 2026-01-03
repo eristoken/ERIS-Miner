@@ -4,6 +4,15 @@ if (process.platform === 'linux') {
   process.env.ELECTRON_OZONE_PLATFORM_HINT = 'x11';
   // Additional Raspberry Pi / ARM64 optimizations
   process.env.ELECTRON_DISABLE_SANDBOX = '1'; // May help on some ARM systems
+  
+  // If running under Wayland, force X11 by setting XDG_SESSION_TYPE
+  // This prevents window visibility issues on systems with Wayland
+  if (process.env.XDG_SESSION_TYPE === 'wayland') {
+    console.log('Wayland detected - forcing X11 session for window compatibility');
+    process.env.XDG_SESSION_TYPE = 'x11';
+    // Also unset Wayland-specific variables
+    delete process.env.WAYLAND_DISPLAY;
+  }
 }
 
 import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
@@ -12,6 +21,16 @@ import * as fs from 'fs';
 
 // Enhanced Linux/Raspberry Pi configuration
 if (process.platform === 'linux') {
+  // Force X11 even if Wayland is detected (Wayland can cause window visibility issues)
+  const sessionType = process.env.XDG_SESSION_TYPE || '';
+  if (sessionType.toLowerCase() === 'wayland') {
+    console.log('Wayland detected but forcing X11 for compatibility');
+    // Unset Wayland-related variables to force X11 fallback
+    delete process.env.WAYLAND_DISPLAY;
+    // Force X11
+    process.env.ELECTRON_OZONE_PLATFORM_HINT = 'x11';
+  }
+  
   app.commandLine.appendSwitch('ozone-platform', 'x11');
   app.commandLine.appendSwitch('enable-features', 'UseOzonePlatform');
   
@@ -32,6 +51,7 @@ if (process.platform === 'linux') {
   console.log('Platform:', process.platform);
   console.log('DISPLAY:', process.env.DISPLAY || 'not set');
   console.log('XDG_SESSION_TYPE:', process.env.XDG_SESSION_TYPE || 'not set');
+  console.log('WAYLAND_DISPLAY:', process.env.WAYLAND_DISPLAY || 'not set');
   console.log('GPU acceleration:', process.arch === 'arm64' || process.arch === 'arm' ? 'disabled (ARM)' : 'enabled');
 }
 
@@ -231,12 +251,15 @@ function createWindow() {
       contextIsolation: true,
       sandbox: false,
     },
-    show: false, // Don't show until ready
+    show: isLinux && isARM, // Show immediately on Raspberry Pi to avoid visibility issues
     // Additional options for Raspberry Pi
     ...(isLinux && isARM ? {
       backgroundColor: '#1a1a1a', // Dark background to prevent flash
       frame: true,
       titleBarStyle: 'default',
+      // Ensure window appears on primary display
+      x: undefined, // Will be set after creation
+      y: undefined, // Will be set after creation
     } : {}),
   };
   
@@ -250,6 +273,30 @@ function createWindow() {
   try {
     mainWindow = new BrowserWindow(windowOptions);
     console.log('Window created successfully');
+    
+    // On Linux/ARM, immediately position and show window
+    if (isLinux && isARM && mainWindow) {
+      try {
+        const { screen } = require('electron');
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+        const windowWidth = windowOptions.width || 1024;
+        const windowHeight = windowOptions.height || 768;
+        const centerX = Math.floor((screenWidth - windowWidth) / 2);
+        const centerY = Math.floor((screenHeight - windowHeight) / 2);
+        mainWindow.setPosition(centerX, centerY);
+        console.log(`Positioned window at ${centerX}, ${centerY} on ${screenWidth}x${screenHeight} screen`);
+        
+        // Ensure it's visible and focused
+        if (!mainWindow.isVisible()) {
+          mainWindow.show();
+        }
+        mainWindow.focus();
+        mainWindow.moveTop();
+      } catch (positionError) {
+        console.error('Error positioning window:', positionError);
+      }
+    }
   } catch (windowError) {
     console.error('Failed to create window:', windowError);
     console.error('Window error stack:', windowError instanceof Error ? windowError.stack : 'No stack trace');
@@ -261,12 +308,47 @@ function createWindow() {
     console.log('Window ready to show');
     if (mainWindow) {
       try {
-        mainWindow.show();
-        console.log('Window shown successfully');
-        // Focus the window
-        if (mainWindow.isVisible()) {
-          mainWindow.focus();
+        // On Linux, ensure window is actually visible and on screen
+        if (process.platform === 'linux') {
+          // Center window on screen
+          const { screen } = require('electron');
+          const primaryDisplay = screen.getPrimaryDisplay();
+          const { width, height } = primaryDisplay.workAreaSize;
+          const windowWidth = mainWindow.getSize()[0];
+          const windowHeight = mainWindow.getSize()[1];
+          const x = Math.floor((width - windowWidth) / 2);
+          const y = Math.floor((height - windowHeight) / 2);
+          mainWindow.setPosition(x, y);
+          console.log(`Positioning window at ${x}, ${y} on screen ${width}x${height}`);
         }
+        
+        mainWindow.show();
+        console.log('Window show() called');
+        
+        // Force focus and bring to front
+        mainWindow.focus();
+        mainWindow.moveTop(); // Bring to front
+        mainWindow.setAlwaysOnTop(true); // Temporarily bring to front
+        setTimeout(() => {
+          if (mainWindow) {
+            mainWindow.setAlwaysOnTop(false); // Remove always on top after a moment
+          }
+        }, 1000);
+        
+        // Verify visibility
+        setTimeout(() => {
+          if (mainWindow) {
+            const isVisible = mainWindow.isVisible();
+            const isFocused = mainWindow.isFocused();
+            console.log(`Window visibility check: visible=${isVisible}, focused=${isFocused}`);
+            if (!isVisible) {
+              console.error('Window is not visible after show() call!');
+              // Try again
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          }
+        }, 500);
       } catch (showError) {
         console.error('Error showing window:', showError);
       }
@@ -392,15 +474,40 @@ function createWindow() {
     if (mainWindow) {
       const isVisible = mainWindow.isVisible();
       const isDestroyed = mainWindow.isDestroyed();
+      const isFocused = mainWindow.isFocused();
+      const [x, y] = mainWindow.getPosition();
+      const [width, height] = mainWindow.getSize();
       console.log('Window status check:');
       console.log('  Visible:', isVisible);
+      console.log('  Focused:', isFocused);
       console.log('  Destroyed:', isDestroyed);
       console.log('  Content loaded:', contentLoaded);
+      console.log('  Position:', x, y);
+      console.log('  Size:', width, height);
       
-      if (!isDestroyed && !isVisible) {
-        console.log('Window exists but not visible - forcing show');
-        mainWindow.show();
-        mainWindow.focus();
+      if (!isDestroyed) {
+        if (!isVisible) {
+          console.log('Window exists but not visible - forcing show and repositioning');
+          // Try to position on primary display
+          try {
+            const { screen } = require('electron');
+            const primaryDisplay = screen.getPrimaryDisplay();
+            const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+            const centerX = Math.floor((screenWidth - width) / 2);
+            const centerY = Math.floor((screenHeight - height) / 2);
+            mainWindow.setPosition(centerX, centerY);
+            console.log(`Repositioned to center: ${centerX}, ${centerY}`);
+          } catch (screenError) {
+            console.error('Error getting screen info:', screenError);
+          }
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.moveTop();
+        } else if (!isFocused) {
+          console.log('Window is visible but not focused - focusing');
+          mainWindow.focus();
+          mainWindow.moveTop();
+        }
       }
     } else {
       console.log('Window is null in final check');
