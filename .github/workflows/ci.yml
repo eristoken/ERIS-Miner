@@ -391,7 +391,7 @@ jobs:
 
   package-windows:
     runs-on: windows-latest
-    needs: [build, package-macos]
+    needs: build
     permissions:
       contents: read
       actions: read
@@ -483,7 +483,7 @@ jobs:
 
   package-linux:
     runs-on: ubuntu-latest
-    needs: [build, package-macos]
+    needs: build
     permissions:
       contents: read
       actions: read
