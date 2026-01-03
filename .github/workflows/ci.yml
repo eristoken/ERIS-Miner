@@ -621,6 +621,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+    env:
+      BUILD_SNAP: 'true'
     
     steps:
       - name: Checkout code
@@ -641,7 +643,12 @@ jobs:
       - name: Install Snapcraft dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y snapcraft
+          sudo apt-get install -y snapd
+          sudo systemctl enable --now snapd.socket
+          sudo snap install snapcraft --classic
+          # Ensure snapcraft is in PATH for subsequent steps
+          echo "$PATH:/snap/bin" >> $GITHUB_PATH
+          snapcraft --version
       
       - name: Install dependencies
         run: npm ci
@@ -688,6 +695,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+    env:
+      BUILD_SNAP: 'true'
     
     steps:
       - name: Checkout code
@@ -708,7 +717,12 @@ jobs:
       - name: Install Snapcraft dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y snapcraft
+          sudo apt-get install -y snapd
+          sudo systemctl enable --now snapd.socket
+          sudo snap install snapcraft --classic
+          # Ensure snapcraft is in PATH for subsequent steps
+          echo "/snap/bin" >> $GITHUB_PATH
+          snapcraft --version
       
       - name: Install dependencies
         run: npm ci

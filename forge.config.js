@@ -49,20 +49,6 @@ const config = {
         },
       },
     },
-    {
-      name: '@electron-forge/maker-snap',
-      config: {
-        options: {
-          name: 'eris-miner',
-          productName: 'ERIS Miner',
-          genericName: 'Cryptocurrency Miner',
-          description: 'ERC-918 Token Miner for ERIS and compatible tokens',
-          summary: 'ERC-918 Token Miner for ERIS and compatible tokens',
-          categories: ['Network', 'Finance'],
-          icon: './eris_token_app_icon.png',
-        },
-      },
-    },
   ],
   plugins: [
     {
@@ -202,6 +188,28 @@ if (process.env.APPLE_SIGNING_IDENTITY) {
   }
 } else {
   console.log('Code signing not configured - APPLE_SIGNING_IDENTITY not set');
+}
+
+// Conditionally include snap maker only when BUILD_SNAP environment variable is set
+// This prevents snap from being built when only DEB is requested
+if (process.env.BUILD_SNAP === 'true' || process.env.BUILD_SNAP === '1') {
+  console.log('Including Snap maker (BUILD_SNAP is set)');
+  config.makers.push({
+    name: '@electron-forge/maker-snap',
+    config: {
+      options: {
+        name: 'eris-miner',
+        productName: 'ERIS Miner',
+        genericName: 'Cryptocurrency Miner',
+        description: 'ERC-918 Token Miner for ERIS and compatible tokens',
+        summary: 'ERC-918 Token Miner for ERIS and compatible tokens',
+        categories: ['Network', 'Finance'],
+        icon: './eris_token_app_icon.png',
+      },
+    },
+  });
+} else {
+  console.log('Snap maker excluded (set BUILD_SNAP=true to include)');
 }
 
 module.exports = config;
