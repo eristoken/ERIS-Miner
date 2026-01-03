@@ -28,6 +28,10 @@ const config = {
         },
       },
     },
+    {
+      name: '@electron-forge/maker-zip',
+      platforms: ['linux'],
+    },
   ],
   plugins: [
     {

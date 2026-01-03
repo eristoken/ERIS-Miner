@@ -36,6 +36,7 @@
     "@electron-forge/cli": "^7.5.0",
     "@electron-forge/maker-dmg": "^7.5.0",
     "@electron-forge/maker-wix": "^7.5.0",
+    "@electron-forge/maker-zip": "^7.5.0",
     "@electron-forge/plugin-auto-unpack-natives": "^7.5.0",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",
