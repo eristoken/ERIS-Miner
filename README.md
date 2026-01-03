@@ -8,12 +8,14 @@ A modern, cross-platform desktop application for mining ERC-918 compliant tokens
 - **Solo Mining**: Direct contract mining with automatic solution submission
 - **Multi-Chain Support**: Configure and mine on multiple blockchain networks
 - **CPU Mining**: Multi-threaded CPU mining with configurable thread count
-- **GPU Mining**: WebGPU-accelerated mining for massively parallel hashing (10-100x faster than CPU)
+- **GPU Mining**: WebGPU-accelerated mining with pipelined batch processing for maximum GPU utilization (10-100x faster than CPU)
+- **Transaction Verification**: Automatic verification of transaction submission and detection of dropped transactions
+- **Solution Queue Management**: Intelligent queue system that prevents duplicates and manages solutions per challenge
 - **RPC Management**: Add, remove, and manage RPC endpoints with automatic failover
 - **Rate Limiting**: Configurable RPC rate limiting to prevent API throttling
 - **Auto RPC Switching**: Automatically switch to backup RPCs when rate limited
 - **Real-Time Stats**: Live mining statistics including hash rate, solutions found, and tokens minted
-- **Reward Tiers**: Track special reward tiers (Enigma23, ErisFavor, DiscordianBlessing, DiscordantMine, NeutralMine)
+- **Reward Tiers**: Track special reward tiers with automatic notifications (Enigma23, ErisFavor, DiscordianBlessing, DiscordantMine, NeutralMine)
 - **Leaderboard**: View mining statistics and rankings on the Stats page
 - **Console Logging**: Clearable console with filtered log output
 - **Modern UI**: Beautiful Material-UI interface with dark theme
@@ -245,8 +247,11 @@ GPU mining runs alongside CPU mining for maximum hash rate:
 
 1. **Compute Shaders**: Full Keccak256 implementation runs entirely on the GPU
 2. **Parallel Processing**: Processes millions of nonces per batch (workgroup count × workgroup size)
-3. **Solution Detection**: GPU checks if hash ≤ target and reports valid solutions
-4. **Combined Stats**: Hash rate shows both CPU and GPU contributions
+3. **Pipelined Batches**: Uses command queue pipelining to keep GPU busy (3 batches in flight)
+   - Overlaps computation with data transfer for maximum GPU utilization (70-90%+)
+   - Prevents GPU idle time during buffer readback operations
+4. **Solution Detection**: GPU checks if hash ≤ target and reports valid solutions
+5. **Combined Stats**: Hash rate shows both CPU and GPU contributions
 
 ### Configuration
 
@@ -272,26 +277,51 @@ Enable GPU mining in the Settings page with two key parameters:
 ### Performance Tips
 
 - GPU mining can be 10-100x faster than CPU depending on your hardware
+- **Pipelined Processing**: The miner uses pipelined batch processing to maximize GPU utilization (70-90%+)
 - Run both CPU and GPU mining for maximum hash rate
-- Monitor the Console page for GPU-related messages
+- Monitor the Console page for GPU-related messages (shows pipeline depth and batch queue status)
 - If GPU mining causes issues, disable it and use CPU-only mode
+- Higher workgroup counts (8192-16384+) can significantly improve performance on modern GPUs
 
 ## Reward Tiers
 
 The miner tracks special reward tiers based on solution difficulty:
-- **Enigma23**: Highest tier reward
+- **Enigma23**: Highest tier reward (jackpot tier)
 - **ErisFavor**: High tier reward
 - **DiscordianBlessing**: Medium-high tier reward
 - **DiscordantMine**: Medium tier reward
 - **NeutralMine**: Standard tier reward
 
-Reward tier counts are displayed on the Home page and included in your mining statistics.
+Reward tier counts are displayed on the Home page and included in your mining statistics. Tier notifications are automatically displayed when solutions are found, even when processing large solution queues.
+
+## Solution Queue Management
+
+The miner uses an intelligent solution queue system:
+
+- **Duplicate Prevention**: Automatically prevents duplicate solutions (same nonce)
+- **Challenge-Based Capping**: Only manages queue when a solution for the current challenge already exists
+- **Multiple Challenges**: Solutions for different challenges can accumulate without limit
+- **Automatic Processing**: Solutions are processed sequentially with rate limiting to prevent RPC throttling
+
+## Transaction Verification
+
+The miner includes comprehensive transaction verification:
+
+- **Mempool Verification**: Verifies transactions are actually in the network mempool
+- **Stability Checks**: Confirms transactions remain in mempool after submission
+- **Drop Detection**: Automatically detects when transactions are dropped from mempool
+- **Replacement Detection**: Identifies when transactions are replaced (same nonce, different hash)
+- **Timeout Handling**: 5-minute timeout with periodic status checks (every 30 seconds)
+- **Clear Error Messages**: Explains why transactions may not appear on blockchain
+
+**Note**: "Transaction submitted" means the transaction entered the mempool, but does not guarantee it will be mined. Transactions can be dropped due to low gas prices, network congestion, or other factors. The miner will detect and report dropped transactions.
 
 ## RPC Rate Limiting
 
 - **Rate Limit**: Configurable delay between RPC calls (default: 200ms, set to 0 to disable)
 - **Auto-Switch**: Automatically switches to the next RPC when rate limited
 - **Switch Delay**: Configurable delay before switching RPCs (default: 20 seconds)
+- **Submission Rate Limit**: Separate rate limiting for solution submissions to prevent transaction spam
 
 ## Gas Fees
 
