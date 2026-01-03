@@ -515,14 +515,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: List available runtimes
-        run: |
-          echo "Installed Flatpak runtimes:"
-          flatpak list --runtime
-          echo ""
-          echo "Available Electron base apps on Flathub:"
-          flatpak search org.electronjs.Electron2.BaseApp || true
-      
       - name: Package for Linux (x64)
         run: DEBUG=electron-forge:*,@malept/flatpak-bundler npm run make:linux 2>&1 || (echo "Build failed, checking for flatpak errors..." && cat /tmp/flatpak-builder-* 2>/dev/null || true && exit 1)
         env:
@@ -594,14 +586,6 @@ jobs:
       
       - name: Install dependencies
         run: npm ci
-      
-      - name: List available runtimes
-        run: |
-          echo "Installed Flatpak runtimes:"
-          flatpak list --runtime
-          echo ""
-          echo "Available Electron base apps on Flathub:"
-          flatpak search org.electronjs.Electron2.BaseApp || true
       
       - name: Package for Linux (arm64)
         run: DEBUG=electron-forge:*,@malept/flatpak-bundler npm run make:linux-arm64 2>&1 || (echo "Build failed, checking for flatpak errors..." && cat /tmp/flatpak-builder-* 2>/dev/null || true && exit 1)

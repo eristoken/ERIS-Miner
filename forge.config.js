@@ -41,6 +41,7 @@ const config = {
           baseVersion: '24.08',
           icon: './eris_token_app_icon.png',
           desktopFile: './org.eristoken.miner.desktop',
+          modules: [],
         },
       },
     },
