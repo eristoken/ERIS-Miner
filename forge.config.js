@@ -48,14 +48,12 @@ const config = {
               name: 'electron-wrapper-override',
               buildsystem: 'simple',
               'build-commands': [
-                'install -Dm755 electron-wrapper /app/bin/electron-wrapper',
+                'echo \'#!/bin/bash\' > /app/bin/electron-wrapper',
+                'echo \'export ELECTRON_OZONE_PLATFORM_HINT=x11\' >> /app/bin/electron-wrapper',
+                'echo \'exec zypak-wrapper "eris-miner" --ozone-platform=x11 "$@"\' >> /app/bin/electron-wrapper',
+                'chmod +x /app/bin/electron-wrapper',
               ],
-              sources: [
-                {
-                  type: 'file',
-                  path: 'flatpak/electron-wrapper',
-                },
-              ],
+              sources: [],
             },
           ],
         },
