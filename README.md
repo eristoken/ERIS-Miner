@@ -117,6 +117,77 @@ eris-miner
 
 On Raspberry Pi and other ARM64 Linux systems, the application requires X11 mode. The application will automatically detect and use X11 when available.
 
+#### Troubleshooting Raspberry Pi Issues
+
+If the application doesn't open on Raspberry Pi, try the following:
+
+**Common Issue: GPU Process Crashes**
+
+If you see errors like `GPU process exited unexpectedly: exit_code=11`, the GPU acceleration is causing issues. You can disable it by running:
+
+```bash
+eris-miner --disable-gpu --disable-gpu-compositing
+```
+
+Or create a launcher script:
+```bash
+#!/bin/bash
+/usr/bin/eris-miner --disable-gpu --disable-gpu-compositing "$@"
+```
+
+**Note**: Future builds will automatically disable GPU acceleration on ARM/Raspberry Pi systems.
+
+**X11 Warning Messages**
+
+If you see `XGetWindowAttributes failed for window 1` - this is usually a harmless warning. The window should still appear. If the window doesn't appear:
+- Check if it's behind other windows (try Alt+Tab)
+- Check if it opened on a different workspace/desktop
+- Verify X11 is working: `xeyes` or `xclock` should work
+- Check window manager compatibility
+
+1. **Check Display Server**: Ensure you're using X11, not Wayland:
+   ```bash
+   echo $XDG_SESSION_TYPE
+   # Should output: x11
+   ```
+   If it shows "wayland", switch to X11 or set `ELECTRON_OZONE_PLATFORM_HINT=x11` before launching.
+
+2. **Check DISPLAY Variable**: Ensure DISPLAY is set:
+   ```bash
+   echo $DISPLAY
+   # Should output: :0 or similar
+   ```
+
+3. **Run from Terminal**: Launch from terminal to see error messages:
+   ```bash
+   eris-miner
+   ```
+   Look for error messages in the console output.
+
+4. **Check Dependencies**: Ensure required libraries are installed:
+   ```bash
+   # On Debian/Ubuntu-based systems
+   sudo apt-get update
+   sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2
+   ```
+
+5. **Check Logs**: The application logs detailed information to the console, including:
+   - Platform and architecture
+   - Display server type
+   - Configuration paths
+   - Any errors during initialization
+
+6. **GPU Acceleration**: If you experience crashes, you can disable GPU acceleration by modifying the launch command (this is commented out in the code but can be enabled if needed).
+
+7. **Memory Issues**: Raspberry Pi models with limited RAM may need swap space:
+   ```bash
+   # Check swap
+   free -h
+   # If no swap, consider adding it
+   ```
+
+If issues persist, please check the console output for specific error messages and report them with your Raspberry Pi model and OS version.
+
 ## CI/CD
 
 The project uses GitHub Actions for automated building and releases:
