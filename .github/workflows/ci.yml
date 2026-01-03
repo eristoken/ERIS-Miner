@@ -515,8 +515,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: List available runtimes
+        run: |
+          echo "Installed Flatpak runtimes:"
+          flatpak list --runtime
+          echo ""
+          echo "Available Electron base apps on Flathub:"
+          flatpak search org.electronjs.Electron2.BaseApp || true
+      
       - name: Package for Linux (x64)
-        run: npm run make:linux
+        run: DEBUG=electron-forge:* npm run make:linux
+        env:
+          DEBUG: electron-forge:*
       
       - name: List output directory
         run: |
@@ -585,8 +595,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: List available runtimes
+        run: |
+          echo "Installed Flatpak runtimes:"
+          flatpak list --runtime
+          echo ""
+          echo "Available Electron base apps on Flathub:"
+          flatpak search org.electronjs.Electron2.BaseApp || true
+      
       - name: Package for Linux (arm64)
-        run: npm run make:linux-arm64
+        run: DEBUG=electron-forge:* npm run make:linux-arm64
+        env:
+          DEBUG: electron-forge:*
       
       - name: List output directory
         run: |
