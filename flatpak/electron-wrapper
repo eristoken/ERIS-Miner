@@ -1,7 +1,0 @@
-#!/bin/bash
-# Custom launcher for ERIS Miner
-# Forces X11 mode to avoid Wayland issues on systems like Raspberry Pi
-
-export ELECTRON_OZONE_PLATFORM_HINT=x11
-exec zypak-wrapper "eris-miner" --ozone-platform=x11 "$@"
-

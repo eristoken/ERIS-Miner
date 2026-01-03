@@ -1059,6 +1059,7 @@ export class Miner {
           target: target.toString(),
           workerId: i,
           workgroupSize: this.settings.gpu_workgroup_size || 256,
+          workgroupCount: this.settings.gpu_workgroup_count || 4096,
         });
       }
       
@@ -1258,6 +1259,7 @@ export class Miner {
             target: target.toString(),
             workerId: i,
             workgroupSize: this.settings.gpu_workgroup_size || 256,
+            workgroupCount: this.settings.gpu_workgroup_count || 4096,
           });
         }
         

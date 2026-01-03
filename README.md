@@ -82,34 +82,38 @@ npm run make
 # Create installer for specific platform
 npm run make:mac     # macOS (DMG)
 npm run make:win     # Windows (MSI)
-npm run make:linux   # Linux (for Flatpak bundling)
+npm run make:linux   # Linux (DEB package)
 ```
 
 See [PACKAGING.md](./PACKAGING.md) for detailed packaging instructions and GitHub Actions workflows.
 
-## Linux Flatpak Installation
+## Linux DEB Installation
 
 ### Installing from GitHub Releases
 
-1. Download the Flatpak file for your architecture:
-   - `org.eristoken.miner_stable_x86_64.flatpak` for x64 systems
-   - `org.eristoken.miner_stable_aarch64.flatpak` for ARM64 systems (Raspberry Pi)
+1. Download the DEB package for your architecture:
+   - `eris-miner_*_amd64.deb` for x64 systems
+   - `eris-miner_*_arm64.deb` for ARM64 systems (Raspberry Pi)
 
-2. Install the Flatpak:
+2. Install the DEB package:
 ```bash
-flatpak install --user ./org.eristoken.miner_stable_*.flatpak
+# Using dpkg
+sudo dpkg -i eris-miner_*_amd64.deb
+
+# Or using apt (will automatically resolve dependencies)
+sudo apt install ./eris-miner_*_amd64.deb
 ```
 
 3. Run the application:
    - **From desktop menu**: Click on "ERIS Miner" in your application menu
    - **From command line**: 
 ```bash
-flatpak run --command=eris-miner-launcher org.eristoken.miner
+eris-miner
 ```
 
 ### Raspberry Pi Notes
 
-On Raspberry Pi and other ARM64 Linux systems, the application requires X11 mode. When launching from the command line, use the `eris-miner-launcher` command as shown above. Desktop menu launches will automatically use the correct settings.
+On Raspberry Pi and other ARM64 Linux systems, the application requires X11 mode. The application will automatically detect and use X11 when available.
 
 ## CI/CD
 
@@ -117,7 +121,7 @@ The project uses GitHub Actions for automated building and releases:
 
 - **Trigger**: Automatically runs on push to `main` branch, or manually via workflow dispatch
 - **Build**: Compiles the React app and Electron main process on Ubuntu
-- **Package**: Creates platform-specific installers (DMG for macOS, MSI for Windows, Flatpak for Linux)
+- **Package**: Creates platform-specific installers (DMG for macOS, MSI for Windows, DEB for Linux)
 - **Release**: Automatically publishes a GitHub release with all platform artifacts
 
 Artifacts are versioned using the version from `package.json`.
@@ -140,6 +144,7 @@ The application stores configuration in `settings.json` (located in the Electron
   "cpu_thread_count": 8,
   "gpu_mining_enabled": true,
   "gpu_workgroup_size": 256,
+  "gpu_workgroup_count": 4096,
   "rpc_rate_limit_ms": 200,
   "submission_rate_limit_ms": 1000,
   "challenge_poll_interval_ms": 2000,
@@ -160,7 +165,8 @@ The application stores configuration in `settings.json` (located in the Electron
 | `gas_limit` | Gas limit for mint transactions | `200000` |
 | `cpu_thread_count` | Number of CPU threads for mining | `1` |
 | `gpu_mining_enabled` | Enable WebGPU-accelerated mining | `false` |
-| `gpu_workgroup_size` | GPU workgroup size (64-1024, must be power of 2) | `256` |
+| `gpu_workgroup_size` | Threads per GPU workgroup (64-1024, power of 2) | `256` |
+| `gpu_workgroup_count` | Number of GPU workgroups to dispatch (256-65535) | `4096` |
 | `rpc_rate_limit_ms` | Minimum delay between RPC calls (0 to disable) | `200` |
 | `submission_rate_limit_ms` | Delay between solution submissions | `1000` |
 | `challenge_poll_interval_ms` | Interval for polling new challenges | `2000` |
@@ -238,19 +244,30 @@ The miner supports GPU-accelerated mining using **WebGPU** compute shaders for m
 GPU mining runs alongside CPU mining for maximum hash rate:
 
 1. **Compute Shaders**: Full Keccak256 implementation runs entirely on the GPU
-2. **Parallel Processing**: Processes thousands of nonces simultaneously (workgroup size × 4 per batch)
+2. **Parallel Processing**: Processes millions of nonces per batch (workgroup count × workgroup size)
 3. **Solution Detection**: GPU checks if hash ≤ target and reports valid solutions
 4. **Combined Stats**: Hash rate shows both CPU and GPU contributions
 
 ### Configuration
 
-Enable GPU mining in the Settings page:
+Enable GPU mining in the Settings page with two key parameters:
 
-- **Enable GPU Mining**: Toggle to activate WebGPU mining
-- **GPU Workgroup Size**: Number of parallel threads per workgroup (64-1024)
-  - Higher values = more parallel hashing, but limited by GPU capabilities
-  - The app auto-detects your GPU's maximum and adjusts if needed
-  - Recommended: Start with 256, increase if stable
+- **GPU Workgroup Size**: Threads per workgroup (64-1024, must be power of 2)
+  - Controls how many hashes each workgroup processes
+  - Default: 256 (optimal for most GPUs)
+  - Some GPUs may benefit from 512 or 1024
+  - The app auto-detects your GPU's maximum supported size
+
+- **GPU Workgroup Count**: Number of workgroups to dispatch (256-65535)
+  - Higher values = more parallel workgroups = higher GPU utilization
+  - Default: 4096 (good starting point)
+  - Recommended: 4096-16384 for modern GPUs
+  - NVIDIA Blackwell/RTX 4000+: Try 16384-32768 for maximum performance
+  - The app auto-detects your GPU's maximum capability
+
+**Batch Size = Workgroup Size × Workgroup Count**
+- Example: 256 × 4096 = 1,048,576 hashes per batch
+- Example: 256 × 16384 = 4,194,304 hashes per batch
 
 ### Performance Tips
 

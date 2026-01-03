@@ -8,6 +8,7 @@ export interface Settings {
   cpu_thread_count: number;
   gpu_mining_enabled: boolean;
   gpu_workgroup_size: number;
+  gpu_workgroup_count: number;
   rpc_rate_limit_ms: number;
   submission_rate_limit_ms: number;
   challenge_poll_interval_ms: number;

@@ -28,7 +28,15 @@ interface GPUInfo {
   available: boolean;
   maxWorkgroupSize: number;
   maxInvocationsPerWorkgroup: number;
+  maxWorkgroupsPerDimension: number;
+  maxComputeWorkgroupStorageSize: number;
+  maxBufferSize: number;
+  maxStorageBufferBindingSize: number;
   adapterInfo?: string;
+  vendor?: string;
+  architecture?: string;
+  device?: string;
+  description?: string;
 }
 
 export default function Settings() {
@@ -56,6 +64,10 @@ export default function Settings() {
           available: false,
           maxWorkgroupSize: 0,
           maxInvocationsPerWorkgroup: 0,
+          maxWorkgroupsPerDimension: 0,
+          maxComputeWorkgroupStorageSize: 0,
+          maxBufferSize: 0,
+          maxStorageBufferBindingSize: 0,
         });
         return;
       }
@@ -66,26 +78,74 @@ export default function Settings() {
           available: false,
           maxWorkgroupSize: 0,
           maxInvocationsPerWorkgroup: 0,
+          maxWorkgroupsPerDimension: 0,
+          maxComputeWorkgroupStorageSize: 0,
+          maxBufferSize: 0,
+          maxStorageBufferBindingSize: 0,
         });
         return;
       }
 
-      // Get adapter limits
+      // Get adapter limits - these are the actual hardware/driver capabilities
       const limits = adapter.limits;
       const maxWorkgroupSize = limits.maxComputeWorkgroupSizeX || 256;
       const maxInvocations = limits.maxComputeInvocationsPerWorkgroup || 256;
+      const maxWorkgroupsPerDimension = limits.maxComputeWorkgroupsPerDimension || 65535;
+      const maxComputeWorkgroupStorageSize = limits.maxComputeWorkgroupStorageSize || 16384;
+      const maxBufferSize = limits.maxBufferSize || 0;
+      const maxStorageBufferBindingSize = limits.maxStorageBufferBindingSize || 0;
 
-      // Try to get adapter info (may not be available in all browsers)
+      // Get adapter info - hardware identification
       let adapterInfo = 'Unknown GPU';
+      let vendor: string | undefined;
+      let architecture: string | undefined;
+      let device: string | undefined;
+      let description: string | undefined;
+      
       if (adapter.info) {
-        adapterInfo = `${adapter.info.vendor || 'Unknown'} ${adapter.info.architecture || ''}`.trim() || 'Unknown GPU';
+        vendor = adapter.info.vendor || undefined;
+        architecture = adapter.info.architecture || undefined;
+        device = adapter.info.device || undefined;
+        description = adapter.info.description || undefined;
+        
+        // Build a nice display string
+        const parts = [];
+        if (vendor) parts.push(vendor);
+        if (architecture) parts.push(architecture);
+        if (device) parts.push(device);
+        if (description) parts.push(description);
+        
+        adapterInfo = parts.length > 0 ? parts.join(' ') : 'Unknown GPU';
       }
+
+      console.log('WebGPU Adapter Info:', {
+        vendor,
+        architecture,
+        device,
+        description,
+        limits: {
+          maxComputeWorkgroupsPerDimension: maxWorkgroupsPerDimension,
+          maxComputeWorkgroupSizeX: maxWorkgroupSize,
+          maxComputeInvocationsPerWorkgroup: maxInvocations,
+          maxComputeWorkgroupStorageSize: maxComputeWorkgroupStorageSize,
+          maxBufferSize: maxBufferSize,
+          maxStorageBufferBindingSize: maxStorageBufferBindingSize,
+        }
+      });
 
       setGpuInfo({
         available: true,
         maxWorkgroupSize,
         maxInvocationsPerWorkgroup: maxInvocations,
+        maxWorkgroupsPerDimension,
+        maxComputeWorkgroupStorageSize,
+        maxBufferSize,
+        maxStorageBufferBindingSize,
         adapterInfo,
+        vendor,
+        architecture,
+        device,
+        description,
       });
     } catch (err: any) {
       console.error('Failed to detect GPU:', err);
@@ -93,6 +153,10 @@ export default function Settings() {
         available: false,
         maxWorkgroupSize: 0,
         maxInvocationsPerWorkgroup: 0,
+        maxWorkgroupsPerDimension: 0,
+        maxComputeWorkgroupStorageSize: 0,
+        maxBufferSize: 0,
+        maxStorageBufferBindingSize: 0,
       });
     }
   };
@@ -360,19 +424,78 @@ export default function Settings() {
                 <Box sx={{ mb: 2, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
                   {gpuInfo.available ? (
                     <>
-                      <Typography variant="body2" color="success.main" sx={{ mb: 1 }}>
+                      <Typography variant="body2" color="success.main" sx={{ mb: 1, fontWeight: 'bold' }}>
                         ✓ WebGPU Available
                       </Typography>
                       {gpuInfo.adapterInfo && (
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                          GPU: {gpuInfo.adapterInfo}
+                          <strong>GPU:</strong> {gpuInfo.adapterInfo}
                         </Typography>
                       )}
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                        Max Workgroup Size: {gpuInfo.maxWorkgroupSize} threads
-                        {gpuInfo.maxInvocationsPerWorkgroup !== gpuInfo.maxWorkgroupSize && 
-                          ` (Max Invocations: ${gpuInfo.maxInvocationsPerWorkgroup})`}
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, mb: 0.5, fontWeight: 'bold' }}>
+                        GPU Compute Limits:
                       </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 2 }}>
+                        • Max Workgroup Count: <strong>{gpuInfo.maxWorkgroupsPerDimension?.toLocaleString()}</strong> workgroups/dispatch
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 2 }}>
+                        • Max Workgroup Size: <strong>{gpuInfo.maxInvocationsPerWorkgroup}</strong> threads/workgroup
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, mb: 0.5, fontWeight: 'bold' }}>
+                        GPU Memory Limits:
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 2 }}>
+                        • Max Buffer Size: <strong>{((gpuInfo.maxBufferSize || 0) / (1024 ** 2)).toFixed(0)} MB</strong>
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 2 }}>
+                        • Max Storage Binding: <strong>{((gpuInfo.maxStorageBufferBindingSize || 0) / (1024 ** 2)).toFixed(0)} MB</strong>
+                      </Typography>
+                      {(() => {
+                        // Calculate maximum safe workgroup count based on GPU capabilities:
+                        // 1. Hardware dispatch limit (maxComputeWorkgroupsPerDimension)
+                        // 2. GPU buffer size limits (use actual GPU limits from requestDevice)
+                        
+                        // Use actual GPU limits (now that we properly request them in requestDevice)
+                        const gpuBufferLimit = Math.min(
+                          gpuInfo.maxBufferSize || 268435456,
+                          gpuInfo.maxStorageBufferBindingSize || 268435456
+                        );
+                        
+                        // Three-tier limit system based on actual GPU limits:
+                        // 1. Optimal: 50% of GPU limit (e.g., 2 GB on 4 GB GPU)
+                        // 2. High: 80% of GPU limit (accounts for readback buffers + overhead)
+                        
+                        const recommendedBufferSize = gpuBufferLimit * 0.5; // 50% of GPU limit
+                        const hardLimitBufferSize = gpuBufferLimit * 0.8; // 80% of GPU limit
+                        
+                        // Calculate recommended count (50%)
+                        const recommendedBatchSize = Math.floor(recommendedBufferSize / 8);
+                        const recommendedWorkgroupCount = Math.floor(recommendedBatchSize / (settings?.gpu_workgroup_size || 256));
+                        
+                        // Calculate hard limit count (80%)
+                        const hardLimitBatchSize = Math.floor(hardLimitBufferSize / 8);
+                        const hardLimitWorkgroupCount = Math.floor(hardLimitBatchSize / (settings?.gpu_workgroup_size || 256));
+                        
+                        // Hardware dispatch limit
+                        const hardwareLimitWorkgroupCount = gpuInfo.maxWorkgroupsPerDimension || 65535;
+                        
+                        // Apply hardware limit to both
+                        const finalRecommendedCount = Math.min(recommendedWorkgroupCount, hardwareLimitWorkgroupCount);
+                        const finalHardLimitCount = Math.min(hardLimitWorkgroupCount, hardwareLimitWorkgroupCount);
+                        
+                        const gpuLimit = gpuInfo?.available 
+                          ? Math.min(gpuInfo.maxBufferSize || 268435456, gpuInfo.maxStorageBufferBindingSize || 268435456)
+                          : 268435456;
+                        const recommendedMB = (gpuLimit * 0.5) / (1024 ** 2);
+                        const highMB = (gpuLimit * 0.8) / (1024 ** 2);
+                        
+                        return (
+                          <Typography variant="caption" color="info.main" sx={{ display: 'block', mt: 1, ml: 2 }}>
+                            ℹ️ Optimal: <strong>{finalRecommendedCount?.toLocaleString()}</strong> (~{recommendedMB.toFixed(0)} MB, 50% GPU limit)
+                            • High: <strong>{finalHardLimitCount?.toLocaleString()}</strong> (~{highMB.toFixed(0)} MB, 80% GPU limit)
+                          </Typography>
+                        );
+                      })()}
                     </>
                   ) : (
                     <Typography variant="body2" color="error.main">
@@ -401,26 +524,102 @@ export default function Settings() {
             </Grid>
 
             {settings.gpu_mining_enabled && (
-              <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  label="GPU Workgroup Size"
-                  type="number"
-                  value={settings.gpu_workgroup_size || 256}
-                  onChange={(e) => handleChange('gpu_workgroup_size', parseInt(e.target.value) || 256)}
-                  margin="normal"
-                  inputProps={{ 
-                    min: 64, 
-                    max: gpuInfo?.maxWorkgroupSize || 1024, 
-                    step: 64 
-                  }}
-                  helperText={
-                    gpuInfo?.available
-                      ? `Number of parallel threads per GPU workgroup (64-${gpuInfo.maxWorkgroupSize}, recommended: ${Math.min(256, gpuInfo.maxWorkgroupSize)})`
-                      : 'Number of parallel threads per GPU workgroup (64-1024, recommended: 256)'
-                  }
-                />
-              </Grid>
+              <>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="GPU Workgroup Size"
+                    type="number"
+                    value={settings.gpu_workgroup_size || 256}
+                    onChange={(e) => handleChange('gpu_workgroup_size', parseInt(e.target.value) || 256)}
+                    margin="normal"
+                    inputProps={{ 
+                      min: 64, 
+                      max: gpuInfo?.maxInvocationsPerWorkgroup || 1024, 
+                      step: 64 
+                    }}
+                    helperText={
+                      gpuInfo?.available
+                        ? `Threads per workgroup. Hardware limit: ${gpuInfo.maxInvocationsPerWorkgroup}. Recommended: 256 (optimal for most GPUs)`
+                        : 'Threads per workgroup (64-1024). Recommended: 256 for most GPUs'
+                    }
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  {(() => {
+                    const workgroupSize = settings.gpu_workgroup_size || 256;
+                    const workgroupCount = settings.gpu_workgroup_count || 4096;
+                    const batchSize = workgroupSize * workgroupCount;
+                    const noncesBufferSize = batchSize * 8;
+                    
+                    // Use actual GPU buffer limits (now properly requested in requestDevice)
+                    // WebGPU now uses the full GPU limits (e.g., 4 GB) instead of default 128 MB
+                    const gpuBufferLimit = gpuInfo?.available 
+                      ? Math.min(
+                          gpuInfo.maxBufferSize || 268435456,
+                          gpuInfo.maxStorageBufferBindingSize || 268435456
+                        )
+                      : 268435456; // Fallback: 256 MB (only if GPU detection failed)
+                    
+                    // Three-tier system based on actual GPU limits:
+                    // 1. Optimal: 50% of GPU limit (green) - e.g., 2 GB on 4 GB GPU
+                    // 2. High: 50-80% of GPU limit (blue) - accounts for readback + overhead
+                    // 3. Warning: >80% of GPU limit (orange) - may cause errors
+                    
+                    const recommendedBufferSize = gpuBufferLimit * 0.5; // 50% of actual GPU limit
+                    const hardLimitBufferSize = gpuBufferLimit * 0.8; // 80% of actual GPU limit
+                    
+                    // Hardware dispatch limit
+                    const hardwareLimitWorkgroupCount = gpuInfo?.maxWorkgroupsPerDimension || 65535;
+                    
+                    // Check limits (ensure finite values)
+                    const isOverHardwareLimit = workgroupCount > hardwareLimitWorkgroupCount;
+                    const isOverHardLimit = isFinite(hardLimitBufferSize) && noncesBufferSize > hardLimitBufferSize;
+                    const isOverRecommended = isFinite(recommendedBufferSize) && noncesBufferSize > recommendedBufferSize && !isOverHardLimit;
+                    
+                    // Show warning if will be clamped
+                    const hasWarning = isOverHardwareLimit || isOverHardLimit;
+                    
+                    return (
+                      <TextField
+                        fullWidth
+                        label="GPU Workgroup Count"
+                        type="number"
+                        value={workgroupCount}
+                        onChange={(e) => handleChange('gpu_workgroup_count', parseInt(e.target.value) || 4096)}
+                        margin="normal"
+                        color={hasWarning ? "warning" : "primary"}
+                        inputProps={{ 
+                          min: 256, 
+                          max: gpuInfo?.maxWorkgroupsPerDimension || 65535, 
+                          step: 256 
+                        }}
+                        helperText={
+                          gpuInfo?.available ? (
+                            <>
+                              {isOverHardLimit || isOverHardwareLimit ? (
+                                <span style={{ color: '#ff9800' }}>
+                                  ⚠️ Batch: {batchSize.toLocaleString()} hashes ({(noncesBufferSize / (1024 ** 2)).toFixed(1)} MB) - Above {(hardLimitBufferSize / (1024 ** 2)).toFixed(0)} MB recommendation. May cause errors.
+                                </span>
+                              ) : isOverRecommended ? (
+                                <span style={{ color: '#2196f3' }}>
+                                  ℹ️ Batch: {batchSize.toLocaleString()} hashes ({(noncesBufferSize / (1024 ** 2)).toFixed(1)} MB) - Above {(recommendedBufferSize / (1024 ** 2)).toFixed(0)} MB optimal, below {(hardLimitBufferSize / (1024 ** 2)).toFixed(0)} MB limit
+                                </span>
+                              ) : (
+                                <span style={{ color: '#4caf50' }}>
+                                  ✓ Batch: {batchSize.toLocaleString()} hashes ({(noncesBufferSize / (1024 ** 2)).toFixed(1)} MB) - Within {(recommendedBufferSize / (1024 ** 2)).toFixed(0)} MB optimal range
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            'Number of workgroups to dispatch (256-65535). Higher = more GPU utilization.'
+                          )
+                        }
+                      />
+                    );
+                  })()}
+                </Grid>
+              </>
             )}
 
             <Grid item xs={12}>

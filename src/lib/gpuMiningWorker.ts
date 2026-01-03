@@ -501,8 +501,11 @@ let currentChallenge: string = '';
 let currentAddress: string = '';
 let currentTarget: bigint = BigInt(0);
 let workerId: number = 0;
-let workgroupSize: number = 256;
-let actualWorkgroupSize: number = 256; // Actual workgroup size used in shader
+let workgroupSize: number = 256; // Configurable workgroup size (threads per workgroup)
+let workgroupCount: number = 4096; // Number of workgroups to dispatch (configurable)
+let maxBufferSize: number = 0; // GPU's max buffer size limit
+let maxStorageBufferBindingSize: number = 0; // GPU's max storage buffer binding size limit
+let maxWorkgroupsPerDimension: number = 65535; // GPU's max dispatch limit
 let baseNonce: bigint = BigInt(0);
 let miningLoop: Promise<void> | null = null;
 let isInitializing: boolean = false; // Flag to prevent concurrent initialization
@@ -511,8 +514,8 @@ let lastReportedHashes: number = 0; // Last reported hash count for progress rep
 let lastDebugLogHashes: number = 0; // Last hash count for debug logging
 
 // Initialize WebGPU
-// Note: Pipeline needs to be recreated when challenge/address changes
-async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean = false): Promise<boolean> {
+// Note: Pipeline needs to be recreated when challenge/address or workgroup size changes
+async function initWebGPU(forceRecreate: boolean = false): Promise<boolean> {
   // If already initialized and not forcing recreate, verify pipeline exists
   if (gpuDevice && !forceRecreate) {
     // If pipeline is missing, we need to recreate it
@@ -550,50 +553,66 @@ async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean
       return false;
     }
 
-    // Get adapter limits to determine what we can request
+    // Get adapter limits
     const adapterLimits = adapter.limits;
     const maxWorkgroupSizeX = adapterLimits.maxComputeWorkgroupSizeX || 256;
     const maxInvocations = adapterLimits.maxComputeInvocationsPerWorkgroup || 256;
     
-    // Determine the actual workgroup size we'll use
-    // We need to respect BOTH limits: maxComputeWorkgroupSizeX AND maxComputeInvocationsPerWorkgroup
-    // The workgroup size must not exceed either limit
+    // Store all relevant limits for validation
+    maxBufferSize = Number(adapterLimits.maxBufferSize) || 268435456; // Default 256 MB
+    maxStorageBufferBindingSize = Number(adapterLimits.maxStorageBufferBindingSize) || 134217728; // Default 128 MB
+    maxWorkgroupsPerDimension = Number(adapterLimits.maxComputeWorkgroupsPerDimension) || 65535; // Default 65535
+    
+    // Verify requested workgroup size is supported
     const effectiveMaxSize = Math.min(maxWorkgroupSizeX, maxInvocations);
-    let clampedSize = Math.min(requestedWorkgroupSize, effectiveMaxSize);
-    // Round down to nearest power of 2 if needed
-    clampedSize = Math.pow(2, Math.floor(Math.log2(clampedSize)));
-    // Ensure minimum of 64
-    clampedSize = Math.max(64, clampedSize);
+    if (workgroupSize > effectiveMaxSize) {
+      self.postMessage({ 
+        type: 'error', 
+        workerId, 
+        message: `GPU does not support workgroup size ${workgroupSize} (max: ${effectiveMaxSize})` 
+      });
+      return false;
+    }
     
-    actualWorkgroupSize = clampedSize;
+    // Log GPU limits for debugging
+    self.postMessage({ 
+      type: 'info', 
+      workerId, 
+      message: `GPU Limits - Max Buffer: ${(maxBufferSize / (1024 ** 2)).toFixed(0)} MB, Max Binding: ${(maxStorageBufferBindingSize / (1024 ** 2)).toFixed(0)} MB` 
+    });
     
-    if (actualWorkgroupSize !== requestedWorkgroupSize) {
+    // Clamp workgroup size to power of 2 for optimal performance
+    const clampedSize = Math.pow(2, Math.floor(Math.log2(workgroupSize)));
+    if (clampedSize !== workgroupSize) {
       self.postMessage({ 
         type: 'info', 
         workerId, 
-        message: `Workgroup size adjusted from ${requestedWorkgroupSize} to ${actualWorkgroupSize} (adapter limits: maxWorkgroupSizeX=${maxWorkgroupSizeX}, maxInvocations=${maxInvocations})` 
+        message: `Workgroup size adjusted from ${workgroupSize} to ${clampedSize} (nearest power of 2)` 
       });
+      workgroupSize = clampedSize;
     }
     
-    // Request device with appropriate limits - we MUST explicitly request the limits
-    // we need, otherwise WebGPU defaults to lower values (256) even if adapter supports more
-    // The error message tells us: "which can be specified in requiredLimits when calling requestDevice()"
+    // Request device with appropriate limits
+    // IMPORTANT: Request higher buffer limits - default is only 128 MB but most GPUs support 1-4 GB
     gpuDevice = await adapter.requestDevice({
       requiredFeatures: [],
       requiredLimits: {
         maxComputeWorkgroupStorageSize: Math.min(16384, adapterLimits.maxComputeWorkgroupStorageSize || 16384),
-        maxComputeInvocationsPerWorkgroup: actualWorkgroupSize, // Request what we'll actually use
-        maxComputeWorkgroupSizeX: actualWorkgroupSize, // Request what we'll actually use (this is critical!)
+        maxComputeInvocationsPerWorkgroup: workgroupSize,
+        maxComputeWorkgroupSizeX: workgroupSize,
+        // Request the maximum buffer sizes the adapter supports (usually 1-4 GB)
+        maxBufferSize: adapterLimits.maxBufferSize || 268435456, // Default: 256 MB
+        maxStorageBufferBindingSize: adapterLimits.maxStorageBufferBindingSize || 268435456, // Default: 256 MB
       },
     });
 
     gpuQueue = gpuDevice.queue;
 
-    // Generate shader with appropriate workgroup size, challenge, and address
+    // Generate shader with configured workgroup size, challenge, and address
     // Format challenge and address: remove '0x' prefix if present
     const challengeHex = currentChallenge.startsWith('0x') ? currentChallenge.substring(2) : currentChallenge;
     const addressHex = currentAddress.startsWith('0x') ? currentAddress.substring(2) : currentAddress;
-    const shaderCode = generateComputeShaderCode(actualWorkgroupSize, challengeHex, addressHex);
+    const shaderCode = generateComputeShaderCode(workgroupSize, challengeHex, addressHex);
 
     // Create compute shader module with error handling
     // Note: createShaderModule is synchronous and validates syntax immediately
@@ -684,13 +703,7 @@ async function initWebGPU(requestedWorkgroupSize: number, forceRecreate: boolean
     self.postMessage({ 
       type: 'info', 
       workerId, 
-      message: `Using workgroup size: ${actualWorkgroupSize}` 
-    });
-
-    self.postMessage({ 
-      type: 'info', 
-      workerId, 
-      message: 'WebGPU initialized successfully' 
+      message: `WebGPU initialized - Workgroup size: ${workgroupSize}` 
     });
     return true;
   } catch (error: any) {
@@ -710,15 +723,19 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
     throw new Error('WebGPU not initialized');
   }
 
+  // Calculate buffer sizes (no hard validation - let GPU handle errors gracefully)
+  const noncesBufferSize = batchSize * 8; // vec2<u32> = 8 bytes
+  const resultsBufferSize = batchSize * 4; // u32 = 4 bytes
+
   // Create buffers
   // vec2<u32> = 2 * 4 bytes = 8 bytes (same as u64)
   const noncesBuffer = gpuDevice.createBuffer({
-    size: batchSize * 8, // vec2<u32> = 8 bytes
+    size: noncesBufferSize,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
   });
 
   const resultsBuffer = gpuDevice.createBuffer({
-    size: batchSize * 4, // u32 = 4 bytes
+    size: resultsBufferSize,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
   });
 
@@ -792,7 +809,7 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
   const pass = encoder.beginComputePass();
   pass.setPipeline(computePipeline);
   pass.setBindGroup(0, bindGroup);
-  pass.dispatchWorkgroups(Math.ceil(batchSize / actualWorkgroupSize));
+  pass.dispatchWorkgroups(Math.ceil(batchSize / workgroupSize));
   pass.end();
 
   // Create readback buffers for both nonces and results
@@ -902,7 +919,7 @@ async function processBatchGPU(batchSize: number): Promise<{ nonces: bigint[], r
 }
 
 self.onmessage = async function(e: MessageEvent) {
-  const { challenge, address, target, workerId: id, stop, workgroupSize: wgSize } = e.data;
+  const { challenge, address, target, workerId: id, stop, workgroupSize: wgSize, workgroupCount: wgCount } = e.data;
   
   if (stop) {
     shouldStop = true;
@@ -920,25 +937,27 @@ self.onmessage = async function(e: MessageEvent) {
     return;
   }
   
-  // Check if challenge or address changed - if so, we need to recreate the pipeline
+  // Check if challenge, address, or workgroup size changed - if so, we need to recreate the pipeline
   const challengeChanged = currentChallenge !== challenge;
   const addressChanged = currentAddress !== address;
+  const workgroupSizeChanged = wgSize && workgroupSize !== wgSize;
   
   // Store mining parameters
   currentChallenge = challenge;
   currentAddress = address;
   currentTarget = BigInt(target);
   workerId = id;
-  workgroupSize = wgSize || 256;
+  workgroupSize = wgSize || 256; // Default to 256 if not specified
+  workgroupCount = wgCount || 4096; // Default to 4096 workgroups if not specified
   shouldStop = false;
   baseNonce = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
   
-  // If challenge or address changed, we need to recreate the pipeline
+  // If challenge, address, or workgroup size changed, we need to recreate the pipeline
   // Do this BEFORE checking if mining loop is running, so the pipeline is ready
-  if (gpuDevice && (challengeChanged || addressChanged)) {
-    // Reinitialize with new challenge/address - force recreation of pipeline
+  if (gpuDevice && (challengeChanged || addressChanged || workgroupSizeChanged)) {
+    // Reinitialize with new parameters - force recreation of pipeline
     // This will set computePipeline to null temporarily, then recreate it
-    const initialized = await initWebGPU(workgroupSize, true);
+    const initialized = await initWebGPU(true);
     if (!initialized) {
       self.postMessage({ 
         type: 'error', 
@@ -987,7 +1006,7 @@ self.onmessage = async function(e: MessageEvent) {
       // Start initialization
       isInitializing = true;
       try {
-        const initialized = await initWebGPU(workgroupSize);
+        const initialized = await initWebGPU();
         if (!initialized) {
           self.postMessage({ 
             type: 'error', 
@@ -1008,16 +1027,6 @@ self.onmessage = async function(e: MessageEvent) {
       } finally {
         isInitializing = false;
       }
-    }
-  } else {
-    // If already initialized but workgroup size changed, we'd need to recreate
-    // For now, just use the existing pipeline (workgroup size is fixed at creation)
-    if (workgroupSize !== actualWorkgroupSize) {
-      self.postMessage({ 
-        type: 'info', 
-        workerId, 
-        message: `Note: GPU workgroup size is ${actualWorkgroupSize} (set at initialization). Restart mining to change.` 
-      });
     }
   }
   
@@ -1041,13 +1050,40 @@ self.onmessage = async function(e: MessageEvent) {
   }
   
   const reportInterval = 10000; // Report hashes every 10k
-  const batchSize = actualWorkgroupSize * 4; // Process 4 workgroups at a time (use actual workgroup size)
+  
+  // Calculate batch size using user settings (no auto-adjustment)
+  const batchSize = workgroupCount * workgroupSize;
+  const noncesBufferSize = batchSize * 8; // vec2<u32> = 8 bytes
+  const resultsBufferSize = batchSize * 4; // u32 = 4 bytes
+  
+  // Get actual GPU buffer limits (now that we request them properly)
+  const actualBufferLimit = Math.min(maxBufferSize, maxStorageBufferBindingSize);
+  
+  // Dynamic recommendations based on actual GPU limits
+  // Use 50% as optimal, 80% as high limit (accounts for readback buffers + overhead)
+  const recommendedLimit = actualBufferLimit * 0.5; // 50% of GPU limit (optimal)
+  const highLimit = actualBufferLimit * 0.8; // 80% of GPU limit (high)
+  
+  // Informational warnings only (no forced adjustments)
+  if (noncesBufferSize > highLimit) {
+    self.postMessage({ 
+      type: 'info', 
+      workerId, 
+      message: `⚠️ Buffer size (${(noncesBufferSize / (1024 ** 2)).toFixed(0)} MB) exceeds ${(highLimit / (1024 ** 2)).toFixed(0)} MB (80% of ${(actualBufferLimit / (1024 ** 2)).toFixed(0)} MB GPU limit). May cause errors.` 
+    });
+  } else if (noncesBufferSize > recommendedLimit) {
+    self.postMessage({ 
+      type: 'info', 
+      workerId, 
+      message: `ℹ️ Buffer size (${(noncesBufferSize / (1024 ** 2)).toFixed(0)} MB) is above ${(recommendedLimit / (1024 ** 2)).toFixed(0)} MB (50% of GPU limit, optimal range).` 
+    });
+  }
   
   // Log that GPU mining is starting
   self.postMessage({ 
     type: 'info', 
     workerId, 
-    message: `GPU mining loop started with batch size: ${batchSize}, workgroup size: ${actualWorkgroupSize}` 
+    message: `GPU mining loop started - Workgroups: ${workgroupCount}, Workgroup size: ${workgroupSize}, Batch size: ${batchSize.toLocaleString()} hashes (${(noncesBufferSize / (1024 ** 2)).toFixed(1)} MB + ${(resultsBufferSize / (1024 ** 2)).toFixed(1)} MB buffers)` 
   });
   
   // Mining loop - runs continuously
