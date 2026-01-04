@@ -205,13 +205,12 @@ if (process.env.BUILD_SNAP === 'true' || process.env.BUILD_SNAP === '1') {
     name: '@electron-forge/maker-snap',
     config: {
       // All options must be at top level (not nested in 'options') to be passed to electron-installer-snap
+      // Note: genericName and categories are DEB-specific and not valid for snap packages
       base: 'core24', // Use core24 base (Ubuntu 24.04) instead of deprecated core18
       name: 'eris-miner',
       productName: 'ERIS Miner',
-      genericName: 'Cryptocurrency Miner',
       description: 'ERC-918 Token Miner for ERIS and compatible tokens',
       summary: 'ERC-918 Token Miner for ERIS and compatible tokens',
-      categories: ['Network', 'Finance'],
       icon: './eris_token_app_icon.png',
     },
   });
