@@ -685,16 +685,39 @@ jobs:
       - name: Pre-install required build-snaps for destructive mode
         run: |
           # Pre-install build-snaps required by GNOME extension (needed even in destructive mode)
-          # Install both as they may be required for different architectures
-          sudo snap install gtk-common-themes --channel=latest/stable || echo "gtk-common-themes install skipped"
-          sudo snap install gnome-46-2404 --channel=latest/stable || echo "gnome-46-2404 install skipped"
+          # The GNOME extension for core24 requires these build-snaps
+          echo "Installing required build-snaps for GNOME extension..."
+          # Function to install snap if not already installed
+          install_snap() {
+            local snap_name=$1
+            if snap list | grep -q "^${snap_name} "; then
+              echo "${snap_name} is already installed"
+            else
+              echo "Installing ${snap_name}..."
+              sudo snap install ${snap_name} --channel=latest/stable || {
+                echo "Warning: Failed to install ${snap_name}, continuing anyway"
+                return 0
+              }
+            fi
+          }
+          install_snap "gtk-common-themes"
+          install_snap "gnome-46-2404"
+          install_snap "mesa-2404"
           # Verify installations
-          snap list | grep -E "(gtk-common-themes|gnome-46)" || echo "Some snaps may not be installed"
+          echo "Installed snaps:"
+          snap list | grep -E "(gtk-common-themes|gnome-46|mesa-2404)" || echo "Some snaps may not be installed"
       
       - name: Package for Linux Snap (x64)
         run: |
           # Run build with proper group context
-          sg lxd -c "npm run make:linux"
+          sg lxd -c "npm run make:linux" || {
+            echo "Build failed, checking snapcraft log..."
+            if [ -f "$HOME/.local/state/snapcraft/log/"*.log ]; then
+              echo "=== Last snapcraft log ==="
+              tail -100 "$HOME/.local/state/snapcraft/log/"*.log | tail -1 | xargs tail -100 || true
+            fi
+            exit 1
+          }
       
       - name: List output directory
         run: |
@@ -806,16 +829,55 @@ jobs:
       - name: Pre-install required build-snaps for destructive mode
         run: |
           # Pre-install build-snaps required by GNOME extension (needed even in destructive mode)
-          # Install both as they may be required for different architectures
-          sudo snap install gtk-common-themes --channel=latest/stable || echo "gtk-common-themes install skipped"
-          sudo snap install gnome-46-2404 --channel=latest/stable || echo "gnome-46-2404 install skipped"
-          # Verify installations
-          snap list | grep -E "(gtk-common-themes|gnome-46)" || echo "Some snaps may not be installed"
+          # The GNOME extension for core24 requires these build-snaps
+          echo "Installing required build-snaps for GNOME extension..."
+          # Function to install snap if not already installed
+          install_snap() {
+            local snap_name=$1
+            local channel=${2:-latest/stable}
+            if snap list | grep -q "^${snap_name} "; then
+              echo "${snap_name} is already installed"
+              return 0
+            else
+              echo "Installing ${snap_name} from channel ${channel}..."
+              # Try multiple channels if latest/stable fails
+              if sudo snap install ${snap_name} --channel=${channel} 2>&1; then
+                echo "${snap_name} installed successfully"
+                return 0
+              else
+                echo "Warning: Failed to install ${snap_name} from ${channel}"
+                # Try edge channel as fallback
+                if [ "${channel}" != "latest/edge" ]; then
+                  echo "Trying latest/edge channel..."
+                  sudo snap install ${snap_name} --channel=latest/edge 2>&1 || {
+                    echo "Warning: Failed to install ${snap_name} from any channel"
+                    return 0
+                  }
+                fi
+              fi
+            fi
+          }
+          install_snap "gtk-common-themes"
+          install_snap "gnome-46-2404"
+          install_snap "mesa-2404"
+          # Verify installations and show what's available
+          echo "=== Installed snaps ==="
+          snap list | grep -E "(gtk-common-themes|gnome-46|mesa-2404)" || echo "Warning: Some required snaps may not be installed"
+          echo ""
+          echo "=== All installed snaps ==="
+          snap list
       
       - name: Package for Linux Snap (arm64)
         run: |
           # Run build with proper group context
-          sg lxd -c "npm run make:linux-arm64"
+          sg lxd -c "npm run make:linux-arm64" || {
+            echo "Build failed, checking snapcraft log..."
+            if [ -f "$HOME/.local/state/snapcraft/log/"*.log ]; then
+              echo "=== Last snapcraft log ==="
+              tail -100 "$HOME/.local/state/snapcraft/log/"*.log | tail -1 | xargs tail -100 || true
+            fi
+            exit 1
+          }
       
       - name: List output directory
         run: |
