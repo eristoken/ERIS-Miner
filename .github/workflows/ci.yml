@@ -624,6 +624,8 @@ jobs:
     env:
       BUILD_SNAP: 'true'
       SNAPCRAFT_BUILD_PROVIDER: 'lxd'
+      # Enable destructive mode to build directly on host (bypasses LXD networking issues)
+      DEBUG: 'electron-installer-snap:snapcraft'
     
     steps:
       - name: Checkout code
@@ -727,6 +729,8 @@ jobs:
     env:
       BUILD_SNAP: 'true'
       SNAPCRAFT_BUILD_PROVIDER: 'lxd'
+      # Enable destructive mode to build directly on host (bypasses LXD networking issues)
+      DEBUG: 'electron-installer-snap:snapcraft'
     
     steps:
       - name: Checkout code
