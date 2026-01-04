@@ -653,13 +653,16 @@ jobs:
           # Configure LXD for snapcraft (required for building snaps)
           sudo lxd init --auto
           # Wait for LXD to be ready
-          sleep 5
+          sleep 10
           sudo lxd waitready || true
           # Add runner user to lxd group and configure access
           sudo usermod -a -G lxd $USER
-          # Configure LXD networking to allow containers internet access
+          # Ensure lxdbr0 network exists and is configured for internet access
+          sudo lxc network create lxdbr0 ipv4.address=10.0.0.1/24 ipv4.nat=true ipv6.address=none ipv6.nat=false 2>/dev/null || true
           sudo lxc network set lxdbr0 ipv4.nat=true || true
           sudo lxc network set lxdbr0 ipv4.address=10.0.0.1/24 || true
+          # Pre-download the Ubuntu 24.04 image to avoid network issues during build
+          sudo lxc image copy ubuntu:24.04 local: --alias ubuntu-24.04 || true
           # Ensure snapcraft and lxd are in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
@@ -744,13 +747,16 @@ jobs:
           # Configure LXD for snapcraft (required for building snaps)
           sudo lxd init --auto
           # Wait for LXD to be ready
-          sleep 5
+          sleep 10
           sudo lxd waitready || true
           # Add runner user to lxd group and configure access
           sudo usermod -a -G lxd $USER
-          # Configure LXD networking to allow containers internet access
+          # Ensure lxdbr0 network exists and is configured for internet access
+          sudo lxc network create lxdbr0 ipv4.address=10.0.0.1/24 ipv4.nat=true ipv6.address=none ipv6.nat=false 2>/dev/null || true
           sudo lxc network set lxdbr0 ipv4.nat=true || true
           sudo lxc network set lxdbr0 ipv4.address=10.0.0.1/24 || true
+          # Pre-download the Ubuntu 24.04 image to avoid network issues during build
+          sudo lxc image copy ubuntu:24.04 local: --alias ubuntu-24.04 || true
           # Ensure snapcraft and lxd are in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
