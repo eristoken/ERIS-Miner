@@ -62,7 +62,7 @@ const config = {
       }
     },
     packageAfterMake: async (config, makeResults) => {
-      // After DEB package is created, modify the desktop file inside the DEB
+      // After packages are created, modify them as needed
       const fs = require('fs');
       const path = require('path');
       const { execSync } = require('child_process');
@@ -70,6 +70,7 @@ const config = {
       for (const makeResult of makeResults) {
         if (makeResult.platform === 'linux' && makeResult.artifacts) {
           for (const artifact of makeResult.artifacts) {
+            // Handle DEB packages - modify desktop file
             if (artifact.endsWith('.deb')) {
               console.log('Modifying desktop file in DEB package:', artifact);
               try {
@@ -123,8 +124,20 @@ const config = {
                 console.log('Falling back to post-install script method');
               }
             }
+            
+            // Handle Snap packages - modify snapcraft.yaml before building
+            // Note: This runs before the snap is actually built, so we need to find the temp directory
+            // Actually, snapcraft.yaml is generated in a temp directory during the build process
+            // We'll need to use a different hook or approach
           }
         }
+      }
+    },
+    preMake: async (config, makeResults) => {
+      // Before making, check if we're building snap and ensure base is set correctly
+      // This hook runs before the actual make process
+      if (process.env.BUILD_SNAP === 'true' || process.env.BUILD_SNAP === '1') {
+        console.log('Snap build detected - base should be set to core24 in config');
       }
     },
   },
@@ -176,6 +189,8 @@ if (process.env.BUILD_SNAP === 'true' || process.env.BUILD_SNAP === '1') {
   config.makers.push({
     name: '@electron-forge/maker-snap',
     config: {
+      // base must be at top level of config (not in options) to be passed to electron-installer-snap
+      base: 'core24', // Use core24 base (Ubuntu 24.04) instead of deprecated core18
       options: {
         name: 'eris-miner',
         productName: 'ERIS Miner',
@@ -184,8 +199,6 @@ if (process.env.BUILD_SNAP === 'true' || process.env.BUILD_SNAP === '1') {
         summary: 'ERC-918 Token Miner for ERIS and compatible tokens',
         categories: ['Network', 'Finance'],
         icon: './eris_token_app_icon.png',
-        base: 'core24', // Use core24 base (Ubuntu 24.04) instead of deprecated core18
-        buildBase: 'devel', // Required when using core24
       },
     },
   });
