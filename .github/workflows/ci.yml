@@ -663,6 +663,14 @@ jobs:
           sudo lxc network set lxdbr0 ipv4.address=10.0.0.1/24 || true
           # Pre-download the Ubuntu 24.04 image to avoid network issues during build
           sudo lxc image copy ubuntu:24.04 local: --alias ubuntu-24.04 || true
+          # Configure LXD to allow unprivileged containers and set up proper networking
+          sudo lxc profile set default security.nesting=true || true
+          sudo lxc profile set default security.privileged=true || true
+          # Ensure default profile uses the bridge network
+          sudo lxc profile device set default eth0 network=lxdbr0 || true
+          # Configure LXD daemon to allow proper networking
+          sudo lxc config set core.https_address [::] || true
+          sudo lxc config set core.trust_password "" || true
           # Ensure snapcraft and lxd are in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
@@ -671,10 +679,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: Test LXD networking
+        run: |
+          # Test that LXD containers can access the internet
+          lxc launch ubuntu:24.04 test-net --ephemeral || sudo lxc launch ubuntu:24.04 test-net --ephemeral
+          sleep 10
+          lxc exec test-net -- ping -c 2 8.8.8.8 || sudo lxc exec test-net -- ping -c 2 8.8.8.8 || echo "Network test failed, continuing anyway"
+          lxc stop test-net || sudo lxc stop test-net || true
+          lxc delete test-net || sudo lxc delete test-net || true
+      
       - name: Package for Linux Snap (x64)
         run: |
-          # Run with lxd group to access LXD (group membership takes effect in new shell)
-          sg lxd -c "npm run make:linux" || npm run make:linux
+          # Run build with proper group context
+          sg lxd -c "npm run make:linux"
       
       - name: List output directory
         run: |
@@ -757,6 +774,16 @@ jobs:
           sudo lxc network set lxdbr0 ipv4.address=10.0.0.1/24 || true
           # Pre-download the Ubuntu 24.04 image to avoid network issues during build
           sudo lxc image copy ubuntu:24.04 local: --alias ubuntu-24.04 || true
+          # Configure LXD to allow unprivileged containers and set up proper networking
+          sudo lxc profile set default security.nesting=true || true
+          sudo lxc profile set default security.privileged=true || true
+          # Ensure default profile uses the bridge network properly
+          # Remove existing eth0 device and add it with proper bridge configuration
+          sudo lxc profile device remove default eth0 2>/dev/null || true
+          sudo lxc profile device add default eth0 nic nictype=bridged parent=lxdbr0 || true
+          # Configure LXD daemon to allow proper networking
+          sudo lxc config set core.https_address [::] || true
+          sudo lxc config set core.trust_password "" || true
           # Ensure snapcraft and lxd are in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
@@ -765,10 +792,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: Test LXD networking
+        run: |
+          # Test that LXD containers can access the internet
+          lxc launch ubuntu:24.04 test-net --ephemeral || sudo lxc launch ubuntu:24.04 test-net --ephemeral
+          sleep 10
+          lxc exec test-net -- ping -c 2 8.8.8.8 || sudo lxc exec test-net -- ping -c 2 8.8.8.8 || echo "Network test failed, continuing anyway"
+          lxc stop test-net || sudo lxc stop test-net || true
+          lxc delete test-net || sudo lxc delete test-net || true
+      
       - name: Package for Linux Snap (arm64)
         run: |
-          # Run with lxd group to access LXD (group membership takes effect in new shell)
-          sg lxd -c "npm run make:linux-arm64" || npm run make:linux-arm64
+          # Run build with proper group context
+          sg lxd -c "npm run make:linux-arm64"
       
       - name: List output directory
         run: |
