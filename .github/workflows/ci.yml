@@ -725,9 +725,11 @@ jobs:
       - name: Install Snapcraft dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y snapd lxd
+          sudo apt-get install -y snapd
           sudo systemctl enable --now snapd.socket
+          # Install snapcraft and LXD via snap (LXD is not available via apt on Ubuntu 24.04)
           sudo snap install snapcraft --classic
+          sudo snap install lxd
           # Install core24 base snap (required for base: core24)
           sudo snap install core24
           # Configure LXD for snapcraft (required for building snaps)
@@ -736,9 +738,10 @@ jobs:
           sudo usermod -a -G lxd $USER
           # Create lxd group if it doesn't exist and set permissions
           sudo chmod 666 /var/snap/lxd/common/lxd/unix.socket || true
-          # Ensure snapcraft is in PATH for subsequent steps
+          # Ensure snapcraft and lxd are in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
+          lxd --version
       
       - name: Install dependencies
         run: npm ci
