@@ -702,19 +702,24 @@ jobs:
           }
           install_snap "gtk-common-themes"
           install_snap "gnome-46-2404"
+          install_snap "gnome-46-2404-sdk"
           install_snap "mesa-2404"
-          # Verify installations
-          echo "Installed snaps:"
-          snap list | grep -E "(gtk-common-themes|gnome-46|mesa-2404)" || echo "Some snaps may not be installed"
+          # Verify installations and show what's available
+          echo "=== Installed snaps ==="
+          snap list | grep -E "(gtk-common-themes|gnome-46|mesa-2404)" || echo "Warning: Some required snaps may not be installed"
+          echo ""
+          echo "=== All installed snaps ==="
+          snap list
       
       - name: Package for Linux Snap (x64)
         run: |
           # Run build with proper group context
           sg lxd -c "npm run make:linux" || {
             echo "Build failed, checking snapcraft log..."
-            if [ -f "$HOME/.local/state/snapcraft/log/"*.log ]; then
-              echo "=== Last snapcraft log ==="
-              tail -100 "$HOME/.local/state/snapcraft/log/"*.log | tail -1 | xargs tail -100 || true
+            LOG_FILE=$(ls -t "$HOME/.local/state/snapcraft/log/"*.log 2>/dev/null | head -1)
+            if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+              echo "=== Last snapcraft log ($LOG_FILE) ==="
+              tail -100 "$LOG_FILE" || true
             fi
             exit 1
           }
@@ -859,6 +864,7 @@ jobs:
           }
           install_snap "gtk-common-themes"
           install_snap "gnome-46-2404"
+          install_snap "gnome-46-2404-sdk"
           install_snap "mesa-2404"
           # Verify installations and show what's available
           echo "=== Installed snaps ==="
@@ -872,9 +878,10 @@ jobs:
           # Run build with proper group context
           sg lxd -c "npm run make:linux-arm64" || {
             echo "Build failed, checking snapcraft log..."
-            if [ -f "$HOME/.local/state/snapcraft/log/"*.log ]; then
-              echo "=== Last snapcraft log ==="
-              tail -100 "$HOME/.local/state/snapcraft/log/"*.log | tail -1 | xargs tail -100 || true
+            LOG_FILE=$(ls -t "$HOME/.local/state/snapcraft/log/"*.log 2>/dev/null | head -1)
+            if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+              echo "=== Last snapcraft log ($LOG_FILE) ==="
+              tail -100 "$LOG_FILE" || true
             fi
             exit 1
           }
