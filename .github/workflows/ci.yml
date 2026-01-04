@@ -682,6 +682,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: Pre-install required build-snaps for destructive mode
+        run: |
+          # Pre-install build-snaps required by GNOME extension (needed even in destructive mode)
+          # Install both as they may be required for different architectures
+          sudo snap install gtk-common-themes --channel=latest/stable || echo "gtk-common-themes install skipped"
+          sudo snap install gnome-46-2404 --channel=latest/stable || echo "gnome-46-2404 install skipped"
+          # Verify installations
+          snap list | grep -E "(gtk-common-themes|gnome-46)" || echo "Some snaps may not be installed"
+      
       - name: Package for Linux Snap (x64)
         run: |
           # Run build with proper group context
@@ -793,6 +802,15 @@ jobs:
       
       - name: Install dependencies
         run: npm ci
+      
+      - name: Pre-install required build-snaps for destructive mode
+        run: |
+          # Pre-install build-snaps required by GNOME extension (needed even in destructive mode)
+          # Install both as they may be required for different architectures
+          sudo snap install gtk-common-themes --channel=latest/stable || echo "gtk-common-themes install skipped"
+          sudo snap install gnome-46-2404 --channel=latest/stable || echo "gnome-46-2404 install skipped"
+          # Verify installations
+          snap list | grep -E "(gtk-common-themes|gnome-46)" || echo "Some snaps may not be installed"
       
       - name: Package for Linux Snap (arm64)
         run: |
