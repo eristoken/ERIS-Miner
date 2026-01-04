@@ -652,10 +652,14 @@ jobs:
           sudo snap install core24
           # Configure LXD for snapcraft (required for building snaps)
           sudo lxd init --auto
+          # Wait for LXD to be ready
+          sleep 5
+          sudo lxd waitready || true
           # Add runner user to lxd group and configure access
           sudo usermod -a -G lxd $USER
-          # Create lxd group if it doesn't exist and set permissions
-          sudo chmod 666 /var/snap/lxd/common/lxd/unix.socket || true
+          # Configure LXD networking to allow containers internet access
+          sudo lxc network set lxdbr0 ipv4.nat=true || true
+          sudo lxc network set lxdbr0 ipv4.address=10.0.0.1/24 || true
           # Ensure snapcraft and lxd are in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
@@ -739,10 +743,14 @@ jobs:
           sudo snap install core24
           # Configure LXD for snapcraft (required for building snaps)
           sudo lxd init --auto
+          # Wait for LXD to be ready
+          sleep 5
+          sudo lxd waitready || true
           # Add runner user to lxd group and configure access
           sudo usermod -a -G lxd $USER
-          # Create lxd group if it doesn't exist and set permissions
-          sudo chmod 666 /var/snap/lxd/common/lxd/unix.socket || true
+          # Configure LXD networking to allow containers internet access
+          sudo lxc network set lxdbr0 ipv4.nat=true || true
+          sudo lxc network set lxdbr0 ipv4.address=10.0.0.1/24 || true
           # Ensure snapcraft and lxd are in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
