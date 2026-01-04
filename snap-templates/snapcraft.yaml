@@ -1,0 +1,45 @@
+name: electronApp
+version: '1.0.0'
+summary: App summary
+description: |
+  App description
+
+base: core24
+confinement: strict
+grade: devel
+
+apps:
+  electronApp:
+    extensions: [gnome-3-38]
+    plugs:
+      - browser-support
+      - desktop
+      - desktop-legacy
+      - gsettings
+      - home
+      - network
+      - unity7
+      - wayland
+      - x11
+    environment:
+      DISABLE_WAYLAND: "1"
+      TMPDIR: $XDG_RUNTIME_DIR
+
+parts:
+  electronApp:
+    source: .
+    plugin: dump
+    stage-packages:
+    - libnotify4
+    - libnss3
+    - libpcre3
+    - libxss1
+    - libxtst6
+  
+  electron-launch:
+    plugin: dump
+    source: .
+    override-build: |
+      snapcraftctl build
+      chmod +x bin/electron-launch
+

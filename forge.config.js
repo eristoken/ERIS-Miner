@@ -134,10 +134,25 @@ const config = {
       }
     },
     preMake: async (config, makeResults) => {
-      // Before making, check if we're building snap and ensure base is set correctly
-      // This hook runs before the actual make process
+      // Before making, patch the snapcraft template if building snap with core24
       if (process.env.BUILD_SNAP === 'true' || process.env.BUILD_SNAP === '1') {
-        console.log('Snap build detected - base should be set to core24 in config');
+        console.log('Snap build detected - patching snapcraft template for core24');
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Patch the strict template to use gnome-3-38 instead of gnome-3-34 for core24
+        const templatePath = path.join(__dirname, 'node_modules', 'electron-installer-snap', 'resources', 'strict', 'snapcraft.yaml');
+        if (fs.existsSync(templatePath)) {
+          let templateContent = fs.readFileSync(templatePath, 'utf8');
+          // Replace gnome-3-34 with gnome-3-38 (compatible with core24)
+          if (templateContent.includes('gnome-3-34')) {
+            templateContent = templateContent.replace(/gnome-3-34/g, 'gnome-3-38');
+            fs.writeFileSync(templatePath, templateContent);
+            console.log('Patched snapcraft template: replaced gnome-3-34 with gnome-3-38');
+          }
+        } else {
+          console.warn('Snapcraft template not found at:', templatePath);
+        }
       }
     },
   },
