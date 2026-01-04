@@ -140,15 +140,15 @@ const config = {
         const fs = require('fs');
         const path = require('path');
         
-        // Patch the strict template to use gnome-3-38 instead of gnome-3-34 for core24
+        // Patch the strict template to use 'gnome' instead of 'gnome-3-34' for core24
         const templatePath = path.join(__dirname, 'node_modules', 'electron-installer-snap', 'resources', 'strict', 'snapcraft.yaml');
         if (fs.existsSync(templatePath)) {
           let templateContent = fs.readFileSync(templatePath, 'utf8');
-          // Replace gnome-3-34 with gnome-3-38 (compatible with core24)
+          // Replace gnome-3-34 with gnome (compatible with core24)
           if (templateContent.includes('gnome-3-34')) {
-            templateContent = templateContent.replace(/gnome-3-34/g, 'gnome-3-38');
+            templateContent = templateContent.replace(/gnome-3-34/g, 'gnome');
             fs.writeFileSync(templatePath, templateContent);
-            console.log('Patched snapcraft template: replaced gnome-3-34 with gnome-3-38');
+            console.log('Patched snapcraft template: replaced gnome-3-34 with gnome (for core24)');
           }
         } else {
           console.warn('Snapcraft template not found at:', templatePath);
