@@ -643,18 +643,26 @@ jobs:
       - name: Install Snapcraft dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y snapd
+          sudo apt-get install -y snapd lxd
           sudo systemctl enable --now snapd.socket
           sudo snap install snapcraft --classic
+          # Install core24 base snap (required for base: core24)
+          sudo snap install core24
+          # Configure LXD for snapcraft (required for building snaps)
+          sudo lxd init --auto
+          # Add current user to lxd group (snapcraft runs as current user)
+          sudo usermod -a -G lxd $USER
           # Ensure snapcraft is in PATH for subsequent steps
-          echo "$PATH:/snap/bin" >> $GITHUB_PATH
+          echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
       
       - name: Install dependencies
         run: npm ci
       
       - name: Package for Linux Snap (x64)
-        run: npm run make:linux
+        run: |
+          # Run with lxd group to access LXD (group membership takes effect in new shell)
+          sg lxd -c "npm run make:linux" || npm run make:linux
       
       - name: List output directory
         run: |
@@ -717,11 +725,17 @@ jobs:
       - name: Install Snapcraft dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y snapd
+          sudo apt-get install -y snapd lxd
           sudo systemctl enable --now snapd.socket
           sudo snap install snapcraft --classic
           # Install core24 base snap (required for base: core24)
           sudo snap install core24
+          # Configure LXD for snapcraft (required for building snaps)
+          sudo lxd init --auto
+          # Add runner user to lxd group and configure access
+          sudo usermod -a -G lxd $USER
+          # Create lxd group if it doesn't exist and set permissions
+          sudo chmod 666 /var/snap/lxd/common/lxd/unix.socket || true
           # Ensure snapcraft is in PATH for subsequent steps
           echo "/snap/bin" >> $GITHUB_PATH
           snapcraft --version
@@ -730,7 +744,9 @@ jobs:
         run: npm ci
       
       - name: Package for Linux Snap (arm64)
-        run: npm run make:linux-arm64
+        run: |
+          # Run with lxd group to access LXD (group membership takes effect in new shell)
+          sg lxd -c "npm run make:linux-arm64" || npm run make:linux-arm64
       
       - name: List output directory
         run: |
