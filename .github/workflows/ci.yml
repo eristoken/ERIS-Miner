@@ -623,6 +623,7 @@ jobs:
       actions: read
     env:
       BUILD_SNAP: 'true'
+      SNAPCRAFT_BUILD_PROVIDER: 'lxd'
     
     steps:
       - name: Checkout code
@@ -679,15 +680,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Test LXD networking
-        run: |
-          # Test that LXD containers can access the internet
-          lxc launch ubuntu:24.04 test-net --ephemeral || sudo lxc launch ubuntu:24.04 test-net --ephemeral
-          sleep 10
-          lxc exec test-net -- ping -c 2 8.8.8.8 || sudo lxc exec test-net -- ping -c 2 8.8.8.8 || echo "Network test failed, continuing anyway"
-          lxc stop test-net || sudo lxc stop test-net || true
-          lxc delete test-net || sudo lxc delete test-net || true
-      
       - name: Package for Linux Snap (x64)
         run: |
           # Run build with proper group context
@@ -734,6 +726,7 @@ jobs:
       actions: read
     env:
       BUILD_SNAP: 'true'
+      SNAPCRAFT_BUILD_PROVIDER: 'lxd'
     
     steps:
       - name: Checkout code
@@ -772,6 +765,11 @@ jobs:
           sudo lxc network create lxdbr0 ipv4.address=10.0.0.1/24 ipv4.nat=true ipv6.address=none ipv6.nat=false 2>/dev/null || true
           sudo lxc network set lxdbr0 ipv4.nat=true || true
           sudo lxc network set lxdbr0 ipv4.address=10.0.0.1/24 || true
+          # Ensure iptables is available for NAT (required for LXD networking)
+          sudo apt-get install -y iptables || true
+          # Enable IP forwarding for NAT
+          echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf || true
+          sudo sysctl -p || true
           # Pre-download the Ubuntu 24.04 image to avoid network issues during build
           sudo lxc image copy ubuntu:24.04 local: --alias ubuntu-24.04 || true
           # Configure LXD to allow unprivileged containers and set up proper networking
@@ -791,15 +789,6 @@ jobs:
       
       - name: Install dependencies
         run: npm ci
-      
-      - name: Test LXD networking
-        run: |
-          # Test that LXD containers can access the internet
-          lxc launch ubuntu:24.04 test-net --ephemeral || sudo lxc launch ubuntu:24.04 test-net --ephemeral
-          sleep 10
-          lxc exec test-net -- ping -c 2 8.8.8.8 || sudo lxc exec test-net -- ping -c 2 8.8.8.8 || echo "Network test failed, continuing anyway"
-          lxc stop test-net || sudo lxc stop test-net || true
-          lxc delete test-net || sudo lxc delete test-net || true
       
       - name: Package for Linux Snap (arm64)
         run: |
